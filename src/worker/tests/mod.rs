@@ -1,3 +1,4 @@
+mod perf;
 mod queries;
 mod session;
 
