@@ -33,12 +33,18 @@ describe("LogPane", () => {
 
     it("renders empty log with mocked IPC", async () => {
         const { default: LogPane } = await import("./LogPane.svelte");
+        const { repoStatusEvent } = await import("./stores");
 
         const { container } = render(LogPane, {
             props: {
                 query_choices: { default: "all()" },
                 latest_query: "all()",
             },
+        });
+
+        repoStatusEvent.set({
+            operation_description: "initial",
+            working_copy: { type: "CommitId", hex: "0".repeat(40), prefix: "0000000", rest: "0000000000000000000000000000000" },
         });
 
         await waitFor(() => {
