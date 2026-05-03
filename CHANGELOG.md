@@ -1,5 +1,14 @@
 # GG Changelog
 
+## [1.0.1](releases/tag/v1.0.1)
+
+### Added
+- The full file path is now shown in the changes menu when expanding a file.
+
+### Fixed
+- Startup hang in large repos caused by `compute_hidden_forks`. The function was performing O(B × n) revset evaluations (B = number of bookmarks, n = repo size), causing multi-minute hangs on `query_log` in repos with many bookmarks. Replaced with a BFS walk that is O(depth_to_log) per bookmark.
+- `compute_hidden_forks` is now skipped entirely for repos above the large-repo-heuristic threshold, which allows users an escape hatch if jjuicy is too slow on a particular repo.
+
 ## [0.39.1](releases/tag/v0.39.1)
 
 ### Added
