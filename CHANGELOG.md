@@ -1,5 +1,13 @@
 # GG Changelog
 
+## [1.0.2](releases/tag/v1.0.2)
+
+### Fixed
+- CI now authenticates against the public npm registry, fixing build failures caused by `package-lock.json` referencing the internal CodeArtifact registry.
+
+### Changed
+- Updated Mac install instructions to reference the private Homebrew tap.
+
 ## [1.0.1](releases/tag/v1.0.1)
 
 ### Added
