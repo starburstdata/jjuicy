@@ -339,7 +339,11 @@
     // policy: reselect by commit id if the original revisions are still around, update by change id if they aren't
     function syncSelectionWithGraph() {
         const selection = $revisionSelectEvent;
-        if (!selection || !graphRows || graphRows.length === 0) {
+        if (!graphRows || graphRows.length === 0) {
+            return;
+        }
+        if (!selection) {
+            setSelection(0, 0);
             return;
         }
 
@@ -436,7 +440,7 @@
                 </ActionWidget>
             {/if}
         </div>
-        <input type="text" bind:value={entered_query} on:change={reloadLog} />
+        <input type="text" bind:value={entered_query} on:change={reloadLog} autocorrect="off" autocapitalize="none" spellcheck="false" />
     </div>
 
     <ListWidget
