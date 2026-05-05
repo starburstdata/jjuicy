@@ -71,3 +71,20 @@
         </Chip>
     </Zone>
 </Object>
+
+<style>
+    :global(.chip .add) {
+        stroke: var(--ju-colors-added);
+        fill: var(--ju-colors-added);
+    }
+
+    :global(.chip .change) {
+        stroke: var(--ju-colors-modified);
+        fill: var(--ju-colors-modified);
+    }
+
+    :global(.chip .remove) {
+        stroke: var(--ju-colors-removed);
+        fill: var(--ju-colors-removed);
+    }
+</style>
