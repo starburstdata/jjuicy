@@ -182,11 +182,6 @@ Core component for direct-manipulation objects. A drag&drop source.
         color: var(--ju-colors-highlight);
     }
 
-    .selected :global(.chip) {
-        background: var(--ju-colors-selectionBackground);
-        color: var(--ju-colors-selectionForeground);
-    }
-
     .conflict {
         background: repeating-linear-gradient(
             120deg,
@@ -251,4 +246,21 @@ Core component for direct-manipulation objects. A drag&drop source.
     .selected :global(.author) {
         color: var(--ju-colors-selectionForegroundMuted);
     }
+
+    /* bookmark styles */
+    .selected :global(.chip .feather.remove) {
+        stroke: var(--ju-colors-removed);
+        fill: var(--ju-colors-removed);
+    }
+
+    .selected  :global(.chip .feather.add) {
+        stroke: var(--ju-colors-added);
+        fill: var(--ju-colors-added);
+    }
+
+    .selected :global(.chip .feather.change) {
+        stroke: var(--ju-colors-modified);
+        fill: var(--ju-colors-modified);
+    }
+
 </style>

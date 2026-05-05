@@ -27,6 +27,7 @@
         transition: background var(--ju-components-transitionFast);
         padding: 0 6px;
         background: var(--ju-colors-surface);
+        color: var(--ju-colors-foreground);
         white-space: nowrap;
         gap: 3px;
     }
