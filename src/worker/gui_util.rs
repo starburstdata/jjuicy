@@ -447,24 +447,26 @@ impl WorkspaceSession<'_> {
             return Ok(HashMap::new());
         }
 
-        // for each bookmark, BFS from its commit toward ancestors, stopping at log commits.
-        // those boundary log commits are the nearest visible ancestors (fork points).
-        // cost: O(depth_to_log) per bookmark instead of O(repo_size) per bookmark.
+        const MAX_BFS_VISITS: usize = 100_000;
         let mut fork_map: HashMap<CommitId, Vec<String>> = HashMap::new();
-        for (commit_id, labels) in &commits_to_labels {
+        let mut total_visits: usize = 0;
+        'outer: for (commit_id, labels) in &commits_to_labels {
             let mut queue = VecDeque::new();
             queue.push_back(commit_id.clone());
             let mut visited: HashSet<CommitId> = HashSet::new();
             visited.insert(commit_id.clone());
 
             while let Some(current) = queue.pop_front() {
+                total_visits += 1;
+                if total_visits > MAX_BFS_VISITS {
+                    break 'outer;
+                }
                 let commit = self.get_commit(&current)?;
                 for parent_id in commit.parent_ids() {
                     if !visited.insert(parent_id.clone()) {
                         continue;
                     }
                     if log_contains(parent_id)? {
-                        // nearest visible ancestor — record without walking further
                         let entry = fork_map.entry(parent_id.clone()).or_default();
                         for label in labels {
                             if !entry.contains(label) {
