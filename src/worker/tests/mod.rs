@@ -9,7 +9,7 @@ use jj_lib::{
 use std::{
     fs::{self, File},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
@@ -27,6 +27,7 @@ impl EventSink for NoProgress {
 
 impl Default for WorkerSession {
     fn default() -> Self {
+        redirect_jj_config_to_tempdir();
         WorkerSession {
             force_log_page_size: None,
             latest_query: None,
@@ -36,6 +37,35 @@ impl Default for WorkerSession {
             ignore_immutable: false,
             enable_askpass: false,
         }
+    }
+}
+
+// jj writes per-repo metadata to $XDG_CONFIG_HOME/jj/repos/ the first time it
+// opens any repository. Without a redirect, every test run permanently adds
+// entries to ~/.config/jj/repos/. We point XDG_CONFIG_HOME at a single
+// process-scoped temp dir so those files land in the OS temp directory instead.
+// TempDir's Drop is not guaranteed to run for statics, but the OS temp directory
+// is cleaned up periodically and this is acceptable for test artifacts.
+static TEST_XDG_HOME: OnceLock<TempDir> = OnceLock::new();
+
+fn redirect_jj_config_to_tempdir() {
+    TEST_XDG_HOME.get_or_init(|| {
+        let dir = tempdir().unwrap();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
+        dir
+    });
+}
+
+#[test]
+fn xdg_config_home_is_redirected_away_from_user_config() {
+    redirect_jj_config_to_tempdir();
+    let xdg = std::env::var("XDG_CONFIG_HOME")
+        .expect("XDG_CONFIG_HOME should be set after redirect");
+    let xdg_path = PathBuf::from(&xdg);
+    assert!(xdg_path.exists(), "redirected XDG_CONFIG_HOME directory should exist");
+    if let Ok(home) = std::env::var("HOME") {
+        let home_config = PathBuf::from(home).join(".config");
+        assert_ne!(xdg_path, home_config, "XDG_CONFIG_HOME should not point to the real user config dir");
     }
 }
 
@@ -53,6 +83,7 @@ impl Default for WorkerSession {
 // The `revs` module provides helpers for known commits. Use `jj log` to find change/commit IDs.
 
 pub fn mkrepo() -> TempDir {
+    redirect_jj_config_to_tempdir();
     let repo_dir = tempdir().unwrap();
     let mut archive_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     archive_path.push("res/test-repo.zip");
@@ -316,7 +347,7 @@ async fn snapshot_respects_xdg_gitignore_colocated() -> Result<()> {
     fs::write(ignore_dir.join("ignore"), "*.ignored\n")?;
 
     unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_dir.path()) };
-    let _guard = SetVarGuard("XDG_CONFIG_HOME");
+    let _guard = SetVarGuard::new("XDG_CONFIG_HOME");
 
     let workspace_dir = tempdir()?;
     let mut session = WorkerSession::default();
@@ -354,7 +385,7 @@ async fn snapshot_respects_xdg_gitignore_internal() -> Result<()> {
     fs::write(ignore_dir.join("ignore"), "*.ignored\n")?;
 
     unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_dir.path()) };
-    let _guard = SetVarGuard("XDG_CONFIG_HOME");
+    let _guard = SetVarGuard::new("XDG_CONFIG_HOME");
 
     let workspace_dir = tempdir()?;
     let mut session = WorkerSession::default();
@@ -583,11 +614,26 @@ async fn list_workspaces_returns_sorted_names() -> Result<()> {
     Ok(())
 }
 
-/// RAII guard that removes an env var on drop
-struct SetVarGuard(&'static str);
+/// RAII guard that restores an env var to its previous value on drop.
+struct SetVarGuard {
+    name: &'static str,
+    prev: Option<String>,
+}
+
+impl SetVarGuard {
+    fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            prev: std::env::var(name).ok(),
+        }
+    }
+}
 
 impl Drop for SetVarGuard {
     fn drop(&mut self) {
-        unsafe { std::env::remove_var(self.0) };
+        match &self.prev {
+            Some(v) => unsafe { std::env::set_var(self.name, v) },
+            None => unsafe { std::env::remove_var(self.name) },
+        }
     }
 }
