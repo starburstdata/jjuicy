@@ -48,20 +48,19 @@ impl Default for WorkerSession {
 // is cleaned up periodically and this is acceptable for test artifacts.
 static TEST_XDG_HOME: OnceLock<TempDir> = OnceLock::new();
 
-fn redirect_jj_config_to_tempdir() {
-    TEST_XDG_HOME.get_or_init(|| {
-        let dir = tempdir().unwrap();
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-        dir
-    });
+fn redirect_jj_config_to_tempdir() -> &'static std::path::Path {
+    TEST_XDG_HOME
+        .get_or_init(|| {
+            let dir = tempdir().unwrap();
+            unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
+            dir
+        })
+        .path()
 }
 
 #[test]
 fn xdg_config_home_is_redirected_away_from_user_config() {
-    redirect_jj_config_to_tempdir();
-    let xdg = std::env::var("XDG_CONFIG_HOME")
-        .expect("XDG_CONFIG_HOME should be set after redirect");
-    let xdg_path = PathBuf::from(&xdg);
+    let xdg_path = redirect_jj_config_to_tempdir();
     assert!(xdg_path.exists(), "redirected XDG_CONFIG_HOME directory should exist");
     if let Ok(home) = std::env::var("HOME") {
         let home_config = PathBuf::from(home).join(".config");
@@ -346,8 +345,7 @@ async fn snapshot_respects_xdg_gitignore_colocated() -> Result<()> {
     fs::create_dir_all(&ignore_dir)?;
     fs::write(ignore_dir.join("ignore"), "*.ignored\n")?;
 
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_dir.path()) };
-    let _guard = SetVarGuard::new("XDG_CONFIG_HOME");
+    let _guard = SetVarGuard::set("XDG_CONFIG_HOME", xdg_dir.path());
 
     let workspace_dir = tempdir()?;
     let mut session = WorkerSession::default();
@@ -384,8 +382,7 @@ async fn snapshot_respects_xdg_gitignore_internal() -> Result<()> {
     fs::create_dir_all(&ignore_dir)?;
     fs::write(ignore_dir.join("ignore"), "*.ignored\n")?;
 
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_dir.path()) };
-    let _guard = SetVarGuard::new("XDG_CONFIG_HOME");
+    let _guard = SetVarGuard::set("XDG_CONFIG_HOME", xdg_dir.path());
 
     let workspace_dir = tempdir()?;
     let mut session = WorkerSession::default();
@@ -614,18 +611,17 @@ async fn list_workspaces_returns_sorted_names() -> Result<()> {
     Ok(())
 }
 
-/// RAII guard that restores an env var to its previous value on drop.
+// RAII guard that sets an env var and restores the previous value on drop.
 struct SetVarGuard {
     name: &'static str,
     prev: Option<String>,
 }
 
 impl SetVarGuard {
-    fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            prev: std::env::var(name).ok(),
-        }
+    fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let prev = std::env::var(name).ok();
+        unsafe { std::env::set_var(name, value) };
+        Self { name, prev }
     }
 }
 
