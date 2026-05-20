@@ -1,5 +1,18 @@
 # GG Changelog
 
+## [1.0.3](releases/tag/v1.0.3)
+
+### Added
+- Require cargo and npm tests to pass before PRs can be merged.
+
+### Changed
+- Bookmark colors are now more vibrant and easier to distinguish.
+- Revset input no longer autocorrects; the first row is selected automatically on load.
+
+### Fixed
+- `xdg_config_home` test is now resilient to env var races in parallel test runs.
+- Tests now redirect jj per-repo config to avoid polluting `~/.config/jj`.
+
 ## [1.0.2](releases/tag/v1.0.2)
 
 ### Fixed
