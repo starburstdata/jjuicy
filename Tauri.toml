@@ -1,5 +1,5 @@
 productName = "jjuicy"
-version = "1.0.2"
+version = "1.0.3"
 identifier = "io.starburst.jjuicy"
 
 [[app.security.capabilities]]

@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "jjuicy-cli"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "assert_matches",

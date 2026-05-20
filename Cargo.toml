@@ -1,6 +1,6 @@
 [package]
 name = "jjuicy-cli"
-version = "1.0.2"
+version = "1.0.3"
 description = "jjuicy - a UI for Jujutsu"
 authors = ["Thomas Castiglione", "Lakshmikant Shrinivas", "Martin Traverso"]
 edition = "2024"
