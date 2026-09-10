@@ -177,18 +177,19 @@ impl Mutation for RenameBookmark {
     ) -> Result<MutationResult> {
         let old_name = self.r#ref.as_bookmark()?;
         let old_name_ref = RefNameBuf::from(old_name);
+        let new_name_ref = RefNameBuf::from(self.new_name);
 
+        let mut tx = ws.start_transaction().await?;
+
+        // read the view after the transaction starts: start_transaction reloads at head, so a
+        // target captured before it could be stale and we'd write it back over a newer one
         let ref_target = ws.view().get_local_bookmark(&old_name_ref).clone();
         if ref_target.is_absent() {
             precondition!("No such bookmark: {}", old_name_ref.as_str());
         }
-
-        let new_name_ref = RefNameBuf::from(self.new_name);
         if ws.view().get_local_bookmark(&new_name_ref).is_present() {
             precondition!("Bookmark already exists: {}", new_name_ref.as_str());
         }
-
-        let mut tx = ws.start_transaction().await?;
 
         tx.repo_mut()
             .set_local_bookmark_target(&new_name_ref, ref_target);

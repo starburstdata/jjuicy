@@ -255,6 +255,14 @@ impl Mutation for MoveHunk {
         ws: &mut WorkspaceSession,
         options: &MutationOptions,
     ) -> Result<MutationResult> {
+        // Split-rebase-squash algorithm:
+        // - sibling_tree represents a virtual commit with just the hunk (like jj split)
+        // - from_tree is modified by extracting the hunk, and its descendants updated (like jj rebase)
+        // - to_tree is given the added hunk by doing a 3-way merge (like jj squash)
+        let mut tx: jj_lib::transaction::Transaction = ws.start_transaction().await?;
+
+        // resolve after starting the transaction - it reloads at head, so ids resolved
+        // beforehand may name commits that have since been rewritten
         let from = ws.resolve_change_id(&self.from_id)?;
         let mut to = ws.resolve_commit_id(&self.to_id)?;
 
@@ -263,12 +271,6 @@ impl Mutation for MoveHunk {
         {
             precondition!("Some revisions are immutable");
         }
-
-        // Split-rebase-squash algorithm:
-        // - sibling_tree represents a virtual commit with just the hunk (like jj split)
-        // - from_tree is modified by extracting the hunk, and its descendants updated (like jj rebase)
-        // - to_tree is given the added hunk by doing a 3-way merge (like jj squash)
-        let mut tx: jj_lib::transaction::Transaction = ws.start_transaction().await?;
         let repo_path = RepoPath::from_internal_string(&self.path.repo_path)?;
 
         // Get the base tree (from's parent) - this is the tree the hunk was computed against

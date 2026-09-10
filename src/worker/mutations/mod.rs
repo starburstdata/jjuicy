@@ -176,6 +176,22 @@ impl Mutation for ExternalResolve {
         }
 
         let mut tx = ws.start_transaction().await?;
+
+        // the merge editor is modal for the user but not for the repo: starting the
+        // transaction reloads at head, so the revision may have been rewritten while the
+        // editor was open. rewriting the superseded commit would make the change divergent
+        let current = ws.resolve_change_id(&self.id)?;
+        if current.id() != commit.id() {
+            precondition!("The revision changed while the merge tool was open");
+        }
+
+        // same window, and the id check doesn't cover it: an unchanged revision can still have
+        // become immutable. neither rewrite_commit nor finish_transaction would catch that -
+        // the latter only guards working-copy commits
+        if ws.check_immutable(vec![current.id().clone()])? {
+            precondition!("The revision became immutable while the merge tool was open");
+        }
+
         tx.repo_mut()
             .rewrite_commit(&commit)
             .set_tree(new_tree)
@@ -544,8 +560,10 @@ impl Mutation for GitPush {
             }
         }
 
+        // the push above already moved the remote, so this must record it even if a concurrent
+        // jj command moved the op head in the meantime - see the method's doc comment
         match ws
-            .finish_transaction(
+            .finish_transaction_after_external_effect(
                 tx,
                 match &self.refspec {
                     GitRefspec::AllBookmarks { remote_name } => {
@@ -588,6 +606,12 @@ impl Mutation for UndoOperation {
         ws: &mut WorkspaceSession,
         _options: &MutationOptions,
     ) -> Result<MutationResult> {
+        let mut tx = ws.start_transaction().await?;
+
+        // resolve after the transaction starts, as jj's own `op revert` does: start_transaction
+        // reloads at head, and undoing an operation that isn't the transaction's base merges a
+        // diff against the wrong parent. note this means a snapshot taken just above is itself
+        // undoable, which is how jj behaves too
         let head_op = op_walk::resolve_op_with_repo(ws.repo(), "@")?; // XXX this should be behind an abstraction, maybe reused in snapshot
         let mut parent_ops = head_op.parents();
 
@@ -599,7 +623,6 @@ impl Mutation for UndoOperation {
             precondition!("Cannot undo a merge operation");
         };
 
-        let mut tx = ws.start_transaction().await?;
         let repo_loader = tx.base_repo().loader();
         let head_repo = repo_loader.load_at(&head_op).await?;
         let parent_repo = repo_loader.load_at(&parent_op).await?;
@@ -633,16 +656,18 @@ impl Mutation for ForgetWorkspace {
     ) -> Result<MutationResult> {
         let workspace_name: WorkspaceNameBuf = self.name.into();
 
-        let Some(wc_id) = ws.view().get_wc_commit_id(&workspace_name) else {
-            precondition!("Workspace '{}' not found", workspace_name.as_symbol());
-        };
         if *workspace_name == *ws.name() {
             precondition!("Cannot forget the current workspace");
         }
 
-        let wc_commit = ws.get_commit(wc_id)?;
-
         let mut tx = ws.start_transaction().await?;
+
+        // resolve after the transaction starts: start_transaction reloads at head, so a commit
+        // resolved before it could be superseded, and we'd abandon the wrong one below
+        let Some(wc_id) = ws.view().get_wc_commit_id(&workspace_name) else {
+            precondition!("Workspace '{}' not found", workspace_name.as_symbol());
+        };
+        let wc_commit = ws.get_commit(wc_id)?;
         tx.repo_mut().remove_wc_commit(&workspace_name).await?;
 
         // abandon the old WC commit if it's empty (same tree as parent merge)
@@ -653,9 +678,9 @@ impl Mutation for ForgetWorkspace {
             tx.repo_mut().rebase_descendants().await?;
         }
 
-        let workspace_store = SimpleWorkspaceStore::load(ws.workspace.repo_path())?;
-        workspace_store.forget(&[&*workspace_name])?;
-
+        // forget after the transaction lands, not before: the op head is re-checked as the
+        // transaction commits, and a rejection there would otherwise leave the workspace
+        // missing from the store while the op log still has its working-copy commit
         match ws
             .finish_transaction(
                 tx,
@@ -663,10 +688,14 @@ impl Mutation for ForgetWorkspace {
             )
             .await?
         {
-            Some(new_status) => Ok(MutationResult::Updated {
-                new_status,
-                new_selection: None,
-            }),
+            Some(new_status) => {
+                let workspace_store = SimpleWorkspaceStore::load(ws.workspace.repo_path())?;
+                workspace_store.forget(&[&*workspace_name])?;
+                Ok(MutationResult::Updated {
+                    new_status,
+                    new_selection: None,
+                })
+            }
             None => Ok(MutationResult::Unchanged),
         }
     }

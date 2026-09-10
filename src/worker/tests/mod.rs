@@ -2,6 +2,7 @@ mod queries;
 mod session;
 
 use anyhow::Result;
+use assert_matches::assert_matches;
 use jj_lib::{
     backend::TreeValue, commit::Commit, ref_name::WorkspaceName, repo::Repo as _,
     repo_path::RepoPath, revset::RevsetIteratorExt,
@@ -15,8 +16,15 @@ use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
 
 use crate::{
-    messages::{ChangeId, CommitId, RevId, RevSet, queries::RevsResult},
-    worker::{EventSink, WorkerSession, WorkspaceSession, queries::query_revisions},
+    messages::{
+        ChangeId, CommitId, RevId, RevSet,
+        mutations::{DescribeRevision, MutationResult},
+        queries::RevsResult,
+    },
+    worker::{
+        EventSink, Mutation as _, WorkerSession, WorkspaceSession, gui_util::SnapshotContention,
+        queries::query_revisions,
+    },
 };
 
 pub struct NoProgress;
@@ -61,10 +69,16 @@ fn redirect_jj_config_to_tempdir() -> &'static std::path::Path {
 #[test]
 fn xdg_config_home_is_redirected_away_from_user_config() {
     let xdg_path = redirect_jj_config_to_tempdir();
-    assert!(xdg_path.exists(), "redirected XDG_CONFIG_HOME directory should exist");
+    assert!(
+        xdg_path.exists(),
+        "redirected XDG_CONFIG_HOME directory should exist"
+    );
     if let Ok(home) = std::env::var("HOME") {
         let home_config = PathBuf::from(home).join(".config");
-        assert_ne!(xdg_path, home_config, "XDG_CONFIG_HOME should not point to the real user config dir");
+        assert_ne!(
+            xdg_path, home_config,
+            "XDG_CONFIG_HOME should not point to the real user config dir"
+        );
     }
 }
 
@@ -276,15 +290,108 @@ async fn snapshot_updates_wc_if_changed() -> Result<()> {
     let mut ws = session.load_workspace(repo.path()).await?;
     let old_wc = ws.wc_id().clone();
 
-    assert!(!ws.import_and_snapshot(true, false).await?);
+    assert!(
+        !ws.import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?
+    );
     assert_eq!(&old_wc, ws.wc_id());
 
     fs::write(repo.path().join("new.txt"), []).unwrap();
 
-    assert!(ws.import_and_snapshot(true, false).await?);
+    assert!(
+        ws.import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?
+    );
     assert_ne!(&old_wc, ws.wc_id());
 
     Ok(())
+}
+
+/// Regression test: a jj command run outside this session must be adopted before the next
+/// mutation, or the mutation commits a sibling operation and forks the op log.
+#[tokio::test]
+async fn mutation_adopts_external_operation() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut stale_session = WorkerSession::default();
+    let mut stale = stale_session.load_workspace(repo.path()).await?;
+    let stale_op = stale.repo().op_id().clone();
+
+    describe_externally(repo.path(), revs::main_bookmark(), "edited elsewhere").await?;
+
+    assert_eq!(
+        stale.repo().op_id(),
+        &stale_op,
+        "the session should not have noticed the external operation yet"
+    );
+
+    let result = DescribeRevision {
+        id: revs::working_copy(),
+        new_description: "edited here".to_owned(),
+        reset_author: false,
+    }
+    .execute_unboxed(&mut stale)
+    .await?;
+    assert_matches!(result, MutationResult::Updated { .. });
+
+    let op_heads = stale.repo().op_heads_store().get_op_heads().await?;
+    assert_eq!(op_heads, vec![stale.repo().op_id().clone()]);
+
+    for change in [revs::main_bookmark(), revs::working_copy()] {
+        let revset = stale.evaluate_revset_str(&change.change.hex)?;
+        let commits = revset.as_ref().iter().commits(stale.repo().store()).count();
+        assert_eq!(commits, 1, "change {} is divergent", change.change.hex);
+    }
+
+    Ok(())
+}
+
+/// Regression test: when the working copy is ahead of the session's view, the snapshot must
+/// adopt that operation. Using it only locally writes the older operation id back into the
+/// working copy's tree state, which makes jj report the working copy as stale.
+#[tokio::test]
+async fn snapshot_adopts_working_copy_operation() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut stale_session = WorkerSession::default();
+    let mut stale = stale_session.load_workspace(repo.path()).await?;
+    let stale_op = stale.repo().op_id().clone();
+
+    let external_op =
+        describe_externally(repo.path(), revs::working_copy(), "edited elsewhere").await?;
+
+    // nothing changed on disk, so the snapshot writes no operation of its own
+    assert!(
+        !stale
+            .import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?
+    );
+    assert_ne!(stale.repo().op_id(), &stale_op);
+    assert_eq!(stale.repo().op_id(), &external_op);
+
+    Ok(())
+}
+
+/// Describe a revision through a separate session, standing in for a jj command run in a
+/// terminal. Returns the operation it committed.
+async fn describe_externally(
+    path: &std::path::Path,
+    id: RevId,
+    description: &str,
+) -> Result<jj_lib::op_store::OperationId> {
+    let mut session = WorkerSession::default();
+    let mut ws = session.load_workspace(path).await?;
+
+    let result = DescribeRevision {
+        id,
+        new_description: description.to_owned(),
+        reset_author: false,
+    }
+    .execute_unboxed(&mut ws)
+    .await?;
+    assert_matches!(result, MutationResult::Updated { .. });
+
+    Ok(ws.repo().op_id().clone())
 }
 
 #[tokio::test]
@@ -357,7 +464,10 @@ async fn snapshot_respects_xdg_gitignore_colocated() -> Result<()> {
     fs::write(workspace_dir.path().join("tracked.txt"), "hello")?;
     fs::write(workspace_dir.path().join("should_be.ignored"), "hidden")?;
 
-    assert!(ws.import_and_snapshot(true, false).await?);
+    assert!(
+        ws.import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?
+    );
 
     let commit = ws.get_commit(ws.wc_id())?;
     let tracked = commit
@@ -394,7 +504,10 @@ async fn snapshot_respects_xdg_gitignore_internal() -> Result<()> {
     fs::write(workspace_dir.path().join("tracked.txt"), "hello")?;
     fs::write(workspace_dir.path().join("should_be.ignored"), "hidden")?;
 
-    assert!(ws.import_and_snapshot(true, false).await?);
+    assert!(
+        ws.import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?
+    );
 
     let commit = ws.get_commit(ws.wc_id())?;
     let tracked = commit
