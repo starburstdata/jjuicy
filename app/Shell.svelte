@@ -211,14 +211,26 @@
         }
     }
 
+    // focus and visibilitychange both fire when returning to a tab; each snapshot can write
+    // a jj operation, so don't run two of them for one switch
+    let snapshotInFlight = false;
+
     async function handleFocus() {
         if (!isTauri() && document.visibilityState !== "visible") {
             return;
         }
         if ($repoConfigEvent.type === "Workspace") {
-            const result = await query<RepoStatus | null>("query_snapshot", null);
-            if (result.type === "data" && result.value) {
-                repoStatusEvent.set(result.value);
+            if (snapshotInFlight) {
+                return;
+            }
+            snapshotInFlight = true;
+            try {
+                const result = await query<RepoStatus | null>("query_snapshot", null);
+                if (result.type === "data" && result.value) {
+                    repoStatusEvent.set(result.value);
+                }
+            } finally {
+                snapshotInFlight = false;
             }
         }
         lastFocus.set(Date.now());

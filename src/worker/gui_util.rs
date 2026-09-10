@@ -31,7 +31,8 @@ use jj_lib::{
     id_prefix::{IdPrefixContext, IdPrefixIndex},
     matchers::{Matcher, NothingMatcher},
     object_id::ObjectId,
-    op_heads_store,
+    op_heads_store::{self, OpHeadsStore},
+    op_store::OperationId,
     operation::Operation,
     ref_name::{WorkspaceName, WorkspaceNameBuf},
     repo::{ReadonlyRepo, Repo, RepoLoaderError, StoreFactories},
@@ -166,6 +167,31 @@ impl WorkerSession {
     }
 }
 
+/// How many times a working-copy snapshot is retried when a concurrent jj command
+/// commits an operation first.
+const SNAPSHOT_ATTEMPTS: usize = 3;
+
+/// What to do when a concurrent jj command moved the op head while a mutation was running.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ForkPolicy {
+    /// Reject the transaction, so nothing is written and the user can retry. The default.
+    Reject,
+    /// Commit anyway, forking the op log for jj to merge. Only for mutations that have already
+    /// made an irreversible external change and that don't rewrite commits.
+    Allow,
+}
+
+/// What to do when every snapshot attempt loses the race to a concurrent jj command.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum SnapshotContention {
+    /// Give up quietly. For refreshes, where the display just misses the newest edits
+    /// until the next one - the edits are still on disk and nothing is lost.
+    Skip,
+    /// Fail the caller. For anything that goes on to write, which must not build on a
+    /// working copy that is missing the user's latest edits.
+    Fail,
+}
+
 impl WorkspaceSession<'_> {
     pub fn name(&self) -> &WorkspaceName {
         self.workspace.workspace_name()
@@ -198,7 +224,8 @@ impl WorkspaceSession<'_> {
         }
 
         // snapshot current workspace before creating the new one
-        self.import_and_snapshot(true, false).await?;
+        self.import_and_snapshot(true, false, SnapshotContention::Fail)
+            .await?;
 
         let (mut new_workspace, repo) = Workspace::init_workspace_with_existing_repo(
             &path,
@@ -338,6 +365,11 @@ impl WorkspaceSession<'_> {
             .map(|backend| backend.git_repo().to_owned())
     }
 
+    /// The operation this session is currently viewing.
+    pub(crate) fn op_id(&self) -> &OperationId {
+        self.operation.repo.op_id()
+    }
+
     pub(crate) async fn load_at_head(&mut self) -> Result<bool> {
         let head = load_at_head(&self.workspace, &self.data).await?;
         if head.repo.op_id() != self.operation.repo.op_id() {
@@ -402,7 +434,6 @@ impl WorkspaceSession<'_> {
         &self,
         log_revset_str: &str,
     ) -> Result<HashMap<CommitId, Vec<String>>> {
-
         if self.is_large {
             return Ok(HashMap::new());
         }
@@ -971,12 +1002,18 @@ impl WorkspaceSession<'_> {
      *********************************************************************/
 
     pub(crate) async fn start_transaction(&mut self) -> Result<Transaction> {
+        // every mutation must build on the current op head. otherwise a jj command run in a
+        // terminal leaves this session on a stale operation and we commit a sibling of it,
+        // forking the op log - and if both sides rewrote the same change, it goes divergent
+        self.load_at_head().await?;
+
         let auto_update_stale = self
             .data
             .workspace_settings
             .get_bool("snapshot.auto-update-stale")
             .unwrap_or(false);
-        self.import_and_snapshot(true, auto_update_stale).await?;
+        self.import_and_snapshot(true, auto_update_stale, SnapshotContention::Fail)
+            .await?;
         Ok(self.operation.repo.start_transaction())
     }
 
@@ -999,9 +1036,35 @@ impl WorkspaceSession<'_> {
     /// button) where the user has deliberately chosen to edit an immutable commit.
     pub(crate) async fn finish_transaction_for_edit(
         &mut self,
+        tx: Transaction,
+        description: impl Into<String>,
+        ignore_immutable: bool,
+    ) -> Result<Option<messages::RepoStatus>> {
+        self.finish_transaction_with(tx, description, ignore_immutable, ForkPolicy::Reject)
+            .await
+    }
+
+    /// Finish a transaction that has already made an irreversible change outside the op log,
+    /// such as pushing to a remote. Rejecting here would strand that change: the user is told
+    /// nothing was written while the remote has already moved, and the retry recomputes from a
+    /// view that never learned about it. Committing instead can fork the op log, which jj
+    /// merges - and is safe only because these mutations don't rewrite commits, so there is no
+    /// same-change-on-both-sides rewrite for the merge to turn divergent.
+    pub(crate) async fn finish_transaction_after_external_effect(
+        &mut self,
+        tx: Transaction,
+        description: impl Into<String>,
+    ) -> Result<Option<messages::RepoStatus>> {
+        self.finish_transaction_with(tx, description, false, ForkPolicy::Allow)
+            .await
+    }
+
+    async fn finish_transaction_with(
+        &mut self,
         mut tx: Transaction,
         description: impl Into<String>,
         ignore_immutable: bool,
+        on_fork: ForkPolicy,
     ) -> Result<Option<messages::RepoStatus>> {
         if !tx.repo().has_changes() {
             return Ok(None);
@@ -1035,6 +1098,13 @@ impl WorkspaceSession<'_> {
             .get_wc_commit_id(self.workspace.workspace_name())
             .map(|commit_id| tx.repo().store().get_commit(commit_id))
             .transpose()?;
+        // before reset_head/export_refs: those write the backing git repo immediately, so
+        // bailing after them would leave git moved while the op log stayed put, and the
+        // "nothing was written" message would be a lie in a colocated repo
+        if let ForkPolicy::Reject = on_fork {
+            self.ensure_at_op_head(tx.base_repo().op_id()).await?;
+        }
+
         if self.is_colocated {
             if let Some(wc_commit) = &maybe_new_wc_commit {
                 git::reset_head(tx.repo_mut(), wc_commit)?;
@@ -1057,6 +1127,7 @@ impl WorkspaceSession<'_> {
         &mut self,
         force: bool,
         auto_update_stale: bool,
+        on_contention: SnapshotContention,
     ) -> Result<bool> {
         if !(force
             || self
@@ -1072,7 +1143,9 @@ impl WorkspaceSession<'_> {
             self.import_git_head().await?;
         }
 
-        let updated_working_copy = self.snapshot_working_copy(auto_update_stale).await?;
+        let updated_working_copy = self
+            .snapshot_working_copy(auto_update_stale, on_contention)
+            .await?;
 
         if self.is_colocated {
             self.import_git_refs().await?;
@@ -1081,7 +1154,51 @@ impl WorkspaceSession<'_> {
         Ok(updated_working_copy)
     }
 
-    async fn snapshot_working_copy(&mut self, auto_update_stale: bool) -> Result<bool> {
+    /// Fail rather than commit an operation that would fork the op log. See [`is_at_op_head`].
+    async fn ensure_at_op_head(&self, op_id: &OperationId) -> Result<()> {
+        if is_at_op_head(self.workspace.repo_loader().op_heads_store(), op_id).await? {
+            return Ok(());
+        }
+        Err(anyhow!(
+            "The repository changed while this operation was running: {} is no longer the \
+             latest operation. Nothing was written - please try again.",
+            short_operation_hash(op_id)
+        ))
+    }
+
+    async fn snapshot_working_copy(
+        &mut self,
+        auto_update_stale: bool,
+        on_contention: SnapshotContention,
+    ) -> Result<bool> {
+        // walking the working copy is the slow part of the window in which a concurrent jj
+        // command can fork the op log, so re-check the head just before committing and start
+        // over if it moved. we never commit a snapshot that would fork - that is the bug this
+        // is here to prevent - so a repo under sustained external activity goes unsnapshotted
+        // until that activity stops, and the caller decides whether that is survivable
+        for attempt in 1..=SNAPSHOT_ATTEMPTS {
+            if let Some(did_anything) = self.try_snapshot_working_copy(auto_update_stale).await? {
+                return Ok(did_anything);
+            }
+            log::debug!("op head moved while snapshotting; retry {attempt}/{SNAPSHOT_ATTEMPTS}");
+            self.load_at_head().await?;
+        }
+
+        match on_contention {
+            SnapshotContention::Skip => {
+                log::warn!("gave up snapshotting after {SNAPSHOT_ATTEMPTS} attempts");
+                Ok(false)
+            }
+            SnapshotContention::Fail => Err(anyhow!(
+                "The repository is being changed by another program, so the working copy could \
+                 not be recorded. Nothing was written - please try again."
+            )),
+        }
+    }
+
+    /// Returns `None` if the op head moved out from under the snapshot, in which case nothing
+    /// was written and the caller should reload and retry.
+    async fn try_snapshot_working_copy(&mut self, auto_update_stale: bool) -> Result<Option<bool>> {
         let workspace_name = self.workspace.workspace_name().to_owned();
         let get_wc_commit = |repo: &ReadonlyRepo| -> Result<Option<_>, _> {
             repo.view()
@@ -1091,12 +1208,15 @@ impl WorkspaceSession<'_> {
         };
         let repo = self.operation.repo.clone();
         let Some(wc_commit) = get_wc_commit(&repo)? else {
-            return Ok(false); // The workspace has been deleted
+            return Ok(Some(false)); // The workspace has been deleted
         };
 
         let base_ignores = self
             .operation
             .base_ignores(self.workspace.workspace_root())?;
+
+        // captured before locking the working copy, which borrows the workspace mutably
+        let op_heads_store = self.workspace.repo_loader().op_heads_store().clone();
 
         // Compare working-copy tree and operation with repo's, and reload as needed.
         let mut locked_ws = self.workspace.start_working_copy_mutation()?;
@@ -1112,8 +1232,13 @@ impl WorkspaceSession<'_> {
                 let wc_commit = if let Some(wc_commit) = get_wc_commit(&repo)? {
                     wc_commit
                 } else {
-                    return Ok(false);
+                    return Ok(Some(false));
                 };
+                // adopt the newer operation instead of using it locally, as cli_util does.
+                // otherwise locked_ws.finish() below writes our older op id back into the
+                // working copy's tree state - moving it backwards, so the next jj command
+                // calls it stale - and every later mutation builds on the stale view
+                self.operation = OperationData::new(&workspace_name, &self.data, repo.clone());
                 (repo, wc_commit)
             }
             WorkingCopyFreshness::WorkingCopyStale => {
@@ -1179,6 +1304,11 @@ impl WorkspaceSession<'_> {
         let did_anything = new_tree_id.tree_ids() != wc_commit.tree_ids();
 
         if did_anything {
+            if !is_at_op_head(&op_heads_store, repo.op_id()).await? {
+                // drop the working-copy lock without finishing, discarding this snapshot
+                return Ok(None);
+            }
+
             let mut tx = repo.start_transaction();
             let mut_repo = tx.repo_mut();
             let commit = mut_repo
@@ -1203,7 +1333,7 @@ impl WorkspaceSession<'_> {
 
         locked_ws.finish(self.operation.repo.op_id().clone())?;
 
-        Ok(did_anything)
+        Ok(Some(did_anything))
     }
 
     async fn update_working_copy(
@@ -1554,6 +1684,21 @@ fn has_external_tool(settings: &UserSettings, config_key: &'static str) -> bool 
 /************************************************/
 /* misc helpers that should be better organised */
 /************************************************/
+
+/// Cheap check (a readdir) that `op_id` is still the only operation head.
+///
+/// jj appends operation heads without a repo-wide lock, so a concurrent command that
+/// doesn't take the working-copy lock - anything run with `--ignore-working-copy` - can
+/// commit while we're working. Both operations then descend from the same parent, jj
+/// merges the two heads, and any change rewritten on both sides becomes divergent. We
+/// can't lock against that, so we detect it as late as possible instead.
+async fn is_at_op_head(
+    op_heads_store: &Arc<dyn OpHeadsStore>,
+    op_id: &OperationId,
+) -> Result<bool> {
+    let op_heads = op_heads_store.get_op_heads().await?;
+    Ok(matches!(&op_heads[..], [head] if head == op_id))
+}
 
 async fn load_at_head(workspace: &Workspace, data: &WorkspaceData) -> Result<OperationData> {
     let loader = workspace.repo_loader();

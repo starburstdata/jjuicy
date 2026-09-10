@@ -351,7 +351,13 @@ pub fn build_context(
             )?,
             &MenuItem::with_id(app_handle, "bookmark_delete", "Delete", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app_handle)?,
-            &MenuItem::with_id(app_handle, "bookmark_copy_name", "Copy name", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app_handle,
+                "bookmark_copy_name",
+                "Copy name",
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 
@@ -624,17 +630,25 @@ pub fn handle_event(window: &Window, event: MenuEvent) -> Result<()> {
         "menu_repo_clone" => repo_clone(window),
         "menu_repo_open" => repo_open(window),
         "menu_repo_reopen" => repo_reopen(window),
-        "menu_revision_new_child" => window.emit_to(target, "jjuicy://menu/revision", "new_child")?,
-        "menu_revision_new_parent" => window.emit_to(target, "jjuicy://menu/revision", "new_parent")?,
+        "menu_revision_new_child" => {
+            window.emit_to(target, "jjuicy://menu/revision", "new_child")?
+        }
+        "menu_revision_new_parent" => {
+            window.emit_to(target, "jjuicy://menu/revision", "new_parent")?
+        }
         "menu_revision_edit" => window.emit_to(target, "jjuicy://menu/revision", "edit")?,
         "menu_revision_revert" => window.emit_to(target, "jjuicy://menu/revision", "revert")?,
-        "menu_revision_duplicate" => window.emit_to(target, "jjuicy://menu/revision", "duplicate")?,
+        "menu_revision_duplicate" => {
+            window.emit_to(target, "jjuicy://menu/revision", "duplicate")?
+        }
         "menu_revision_abandon" => window.emit_to(target, "jjuicy://menu/revision", "abandon")?,
         "menu_revision_squash" => window.emit_to(target, "jjuicy://menu/revision", "squash")?,
         "menu_revision_restore" => window.emit_to(target, "jjuicy://menu/revision", "restore")?,
         "menu_revision_bookmark" => window.emit_to(target, "jjuicy://menu/revision", "bookmark")?,
         "revision_new_child" => window.emit_to(target, "jjuicy://context/revision", "new_child")?,
-        "revision_new_parent" => window.emit_to(target, "jjuicy://context/revision", "new_parent")?,
+        "revision_new_parent" => {
+            window.emit_to(target, "jjuicy://context/revision", "new_parent")?
+        }
         "revision_edit" => window.emit_to(target, "jjuicy://context/revision", "edit")?,
         "revision_revert" => window.emit_to(target, "jjuicy://context/revision", "revert")?,
         "revision_duplicate" => window.emit_to(target, "jjuicy://context/revision", "duplicate")?,
@@ -642,13 +656,17 @@ pub fn handle_event(window: &Window, event: MenuEvent) -> Result<()> {
         "revision_squash" => window.emit_to(target, "jjuicy://context/revision", "squash")?,
         "revision_restore" => window.emit_to(target, "jjuicy://context/revision", "restore")?,
         "revision_bookmark" => window.emit_to(target, "jjuicy://context/revision", "bookmark")?,
-        "revision_copy_change_id" => window.emit_to(target, "jjuicy://context/revision", "copy_change_id")?,
+        "revision_copy_change_id" => {
+            window.emit_to(target, "jjuicy://context/revision", "copy_change_id")?
+        }
         "tree_squash" => window.emit_to(target, "jjuicy://context/tree", "squash")?,
         "tree_restore" => window.emit_to(target, "jjuicy://context/tree", "restore")?,
         "bookmark_track" => window.emit_to(target, "jjuicy://context/bookmark", "track")?,
         "bookmark_untrack" => window.emit_to(target, "jjuicy://context/bookmark", "untrack")?,
         "bookmark_push_all" => window.emit_to(target, "jjuicy://context/bookmark", "push-all")?,
-        "bookmark_push_single" => window.emit_to(target, "jjuicy://context/bookmark", "push-single")?,
+        "bookmark_push_single" => {
+            window.emit_to(target, "jjuicy://context/bookmark", "push-single")?
+        }
         "bookmark_fetch_all" => window.emit_to(target, "jjuicy://context/bookmark", "fetch-all")?,
         "bookmark_fetch_single" => {
             window.emit_to(target, "jjuicy://context/bookmark", "fetch-single")?

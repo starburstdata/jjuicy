@@ -13,7 +13,7 @@ use jj_lib::config::{ConfigNamePathBuf, ConfigSource};
 
 use super::{
     Mutation, WorkerSession,
-    gui_util::WorkspaceSession,
+    gui_util::{SnapshotContention, WorkspaceSession},
     queries::{self, QuerySession, QueryState},
 };
 
@@ -221,7 +221,8 @@ impl Session for WorkerSession {
 
                     latest_wd = Some(resolved_wd);
 
-                    ws.import_and_snapshot(false, true).await?;
+                    ws.import_and_snapshot(false, true, SnapshotContention::Skip)
+                        .await?;
 
                     tx.send(ws.format_config())?;
 
@@ -314,13 +315,22 @@ impl Session for WorkspaceSession<'_> {
                     handle_query(&mut state, &self, tx, rx, revset_string, None).await?;
                 }
                 SessionEvent::ExecuteSnapshot { tx } => {
-                    let updated_head = self.load_at_head().await?; // alternatively, this could be folded into snapshot so that it's done by all mutations
+                    // mutations reload at head themselves (see start_transaction); this is
+                    // what keeps the *displayed* view fresh when jj is used elsewhere
+                    let updated_head = self.load_at_head().await?;
                     let auto_update_stale = self
                         .data
                         .workspace_settings
                         .get_bool("snapshot.auto-update-stale")
                         .unwrap_or(false);
-                    if self.import_and_snapshot(false, auto_update_stale).await? || updated_head {
+                    // the snapshot reports whether the tree changed, but it can also adopt a
+                    // newer operation without touching the tree, so compare operations across
+                    // it rather than trusting that return alone
+                    let op_before = self.op_id().clone();
+                    let snapshotted = self
+                        .import_and_snapshot(false, auto_update_stale, SnapshotContention::Skip)
+                        .await?;
+                    if snapshotted || updated_head || *self.op_id() != op_before {
                         tx.send(Some(self.format_status()))?;
                     } else {
                         tx.send(None)?;
@@ -435,8 +445,7 @@ impl Session for WorkspaceSession<'_> {
                     let name: ConfigNamePathBuf = key.iter().collect();
                     let result: Result<()> = (|| {
                         let path = resolve_config_path(scope, self.workspace.repo_path())?;
-                        let mut file =
-                            jj_lib::config::ConfigFile::load_or_empty(scope, &path)?;
+                        let mut file = jj_lib::config::ConfigFile::load_or_empty(scope, &path)?;
                         file.set_value(&name, toml_edit::Value::from(value.as_str()))?;
                         file.save()?;
                         Ok(())
@@ -457,8 +466,7 @@ impl Session for WorkspaceSession<'_> {
                     let name: ConfigNamePathBuf = key.iter().collect();
                     let result: Result<()> = (|| {
                         let path = resolve_config_path(scope, self.workspace.repo_path())?;
-                        let mut file =
-                            jj_lib::config::ConfigFile::load_or_empty(scope, &path)?;
+                        let mut file = jj_lib::config::ConfigFile::load_or_empty(scope, &path)?;
                         // only save if the entry existed, to avoid creating an empty config file
                         if file.delete_value(&name)?.is_some() {
                             file.save()?;
