@@ -236,7 +236,7 @@ def cmd_execute(args):
     run(f'jj commit -m "Bump version to {version}"')
 
     print("creating tag...")
-    run(f"jj tag create v{version} -r @-")
+    run(f"jj tag set v{version} -r @-")
 
     print("pushing to GitHub...")
     run("jj git push --remote origin --all")
