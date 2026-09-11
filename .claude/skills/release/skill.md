@@ -58,11 +58,16 @@ This will:
 2. Run `cargo update` and `npm update`
 3. Prepend the new section to `CHANGELOG.md`
 4. `jj commit` the version bump
-5. Create the `v<version>` tag
-6. Push to GitHub (bookmarks + tag)
-7. Create the GitHub release with the changelog as release notes
-8. Fetch the auto-generated source tarball and compute its SHA256
-9. Clone `starburstdata/homebrew-jjuicy`, update `Formula/jjuicy.rb`, and open a PR
+5. Push it on a `release/v<version>` bookmark and open a PR against `master`
+6. Wait for CI (`build-check-test`) to pass, then squash-merge the PR
+   (`master` is branch-protected — direct pushes are rejected)
+7. Fetch the merged commit and tag it `v<version>`
+8. Create the GitHub release with the changelog as release notes
+9. Fetch the auto-generated source tarball and compute its SHA256
+10. Clone `starburstdata/homebrew-jjuicy`, update `Formula/jjuicy.rb`, and open a PR
+
+Step 6 can take a while (a full `cargo build` on CI). This is expected —
+keep waiting rather than assuming it's stuck.
 
 ## Step 5 — report back
 

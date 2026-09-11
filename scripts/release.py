@@ -4,7 +4,8 @@
 Two subcommands:
   generate  -- collect commits and print version + raw commits as JSON
                (the caller — typically the release skill — drafts the changelog)
-  execute   -- apply version bump, commit, tag, push, GH release, homebrew PR
+  execute   -- apply version bump, commit, open+merge a release PR (master is
+               branch-protected), tag the merged commit, GH release, homebrew PR
 """
 
 import argparse
@@ -170,6 +171,48 @@ def fetch_tarball_sha256(version, retries=12, delay=5):
     sys.exit(1)
 
 
+def create_release_pr(version, changelog_text):
+    """Push the bump commit on its own bookmark and open a PR against master.
+
+    master is branch-protected (requires a passing build-check-test run), so
+    the bump commit can't be pushed directly - see the v1.0.4 release.
+    """
+    branch = f"release/v{version}"
+    run(f"jj bookmark create {branch} -r @-")
+    run(f"jj git push --bookmark {branch}")
+
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(f"Version bump for the {version} release.\n\n{changelog_text}\n")
+        body_file = f.name
+    try:
+        pr_url = run(
+            f"gh pr create --repo {GITHUB_REPO} "
+            f"--base master --head {branch} "
+            f"--title 'Bump version to {version}' "
+            f"--body-file {body_file}"
+        )
+    finally:
+        Path(body_file).unlink(missing_ok=True)
+
+    pr_number = pr_url.rstrip("/").rsplit("/", 1)[-1]
+    return pr_number, pr_url
+
+
+def wait_for_checks_and_merge(pr_number):
+    print(f"waiting for CI on PR #{pr_number}...", file=sys.stderr)
+    run(f"gh pr checks {pr_number} --repo {GITHUB_REPO} --watch")
+
+    print(f"merging PR #{pr_number}...", file=sys.stderr)
+    run(f"gh pr merge {pr_number} --repo {GITHUB_REPO} --squash --delete-branch")
+
+    merge_sha = run(
+        f"gh pr view {pr_number} --repo {GITHUB_REPO} "
+        f"--json mergeCommit -q .mergeCommit.oid"
+    )
+    return merge_sha
+
+
 def create_github_release(version, notes_file):
     return run(
         f"gh release create v{version} "
@@ -235,12 +278,19 @@ def cmd_execute(args):
     print("committing...")
     run(f'jj commit -m "Bump version to {version}"')
 
-    print("creating tag...")
-    run(f"jj tag set v{version} -r @-")
+    print("opening release PR...")
+    pr_number, pr_url = create_release_pr(version, changelog_text)
+    print(f"PR: {pr_url}")
 
-    print("pushing to GitHub...")
-    run("jj git push --remote origin --all")
-    # push tag explicitly — jj --all may not include tags
+    merge_sha = wait_for_checks_and_merge(pr_number)
+    print(f"merged as {merge_sha}")
+
+    print("fetching merged commit...")
+    run("jj git fetch --remote origin")
+    run(f"jj bookmark set master -r {merge_sha}")
+
+    print("creating tag...")
+    run(f"jj tag set v{version} -r {merge_sha}")
     run(f"git push origin v{version}", cwd=REPO_ROOT)
 
     print("creating GitHub release...")
