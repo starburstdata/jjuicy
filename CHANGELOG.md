@@ -1,5 +1,10 @@
 # GG Changelog
 
+## [1.0.4](releases/tag/v1.0.4)
+
+### Fixed
+- Fixed the operation log forking when jj was also used from a terminal alongside jjuicy, which could cause changes to become divergent.
+
 ## [1.0.3](releases/tag/v1.0.3)
 
 ### Added
