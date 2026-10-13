@@ -3,7 +3,8 @@
 //! A theme is a TOML file with `[light.*]` and `[dark.*]` sections, each
 //! containing `colors`, `text`, `shadows`, and `components` tables. Values
 //! in later sections can reference earlier ones with `$section.key` syntax
-//! (e.g. `$colors.primary`), resolved at load time in a single pass.
+//! (e.g. `$colors.primary`), resolved at load time. Tokens a theme omits
+//! are inherited from the bundled default theme.
 
 #[cfg(all(test, not(feature = "ts-rs")))]
 mod tests;
@@ -14,7 +15,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use log::warn;
 
-const SECTIONS: &[&str] = &["colors", "text", "shadows", "components"];
+const SECTIONS: &[&str] = &["colors", "syntax", "text", "shadows", "components"];
+
+const DEFAULT_THEME: &str = include_str!("../../res/themes/default.toml");
 
 /// Resolved theme tokens for one variant (light or dark), keyed by
 /// `"section-tokenName"` → CSS value.
@@ -26,12 +29,24 @@ pub struct Theme {
     pub dark: ThemeTokens,
 }
 
-/// Load and resolve a theme from a TOML string.
+/// Load and resolve a theme from a TOML string, inheriting missing tokens
+/// from the default theme.
 pub fn parse_theme(toml_str: &str) -> Result<Theme> {
+    let base: toml_edit::DocumentMut = DEFAULT_THEME.parse().context("invalid default theme")?;
     let doc: toml_edit::DocumentMut = toml_str.parse().context("invalid theme TOML")?;
 
-    let light = resolve_variant(&doc, "light")?;
-    let dark = resolve_variant(&doc, "dark")?;
+    let light = resolve_variant(&doc, Some(&base), "light")?;
+    let dark = resolve_variant(&doc, Some(&base), "dark")?;
+
+    Ok(Theme { light, dark })
+}
+
+/// Load and resolve a theme without inheriting from the default theme.
+pub fn parse_theme_standalone(toml_str: &str) -> Result<Theme> {
+    let doc: toml_edit::DocumentMut = toml_str.parse().context("invalid theme TOML")?;
+
+    let light = resolve_variant(&doc, None, "light")?;
+    let dark = resolve_variant(&doc, None, "dark")?;
 
     Ok(Theme { light, dark })
 }
@@ -45,15 +60,11 @@ pub fn load_theme(path: &Path) -> Result<Theme> {
 
 /// The bundled default theme.
 pub fn default_theme() -> Theme {
-    parse_theme(include_str!("../../res/themes/default.toml"))
-        .expect("bundled default theme is valid")
+    parse_theme_standalone(DEFAULT_THEME).expect("bundled default theme is valid")
 }
 
 const BUNDLED_THEMES: &[(&str, &str)] = &[
-    (
-        "default.toml",
-        include_str!("../../res/themes/default.toml"),
-    ),
+    ("default.toml", DEFAULT_THEME),
     ("macos.toml", include_str!("../../res/themes/macos.toml")),
     (
         "material.toml",
@@ -170,30 +181,35 @@ pub fn ensure_bundled_themes() {
     }
 }
 
-fn resolve_variant(doc: &toml_edit::DocumentMut, variant: &str) -> Result<ThemeTokens> {
+fn resolve_variant(
+    doc: &toml_edit::DocumentMut,
+    base: Option<&toml_edit::DocumentMut>,
+    variant: &str,
+) -> Result<ThemeTokens> {
     let variant_table = doc
         .get(variant)
         .and_then(|v| v.as_table())
         .with_context(|| format!("missing [{variant}] section in theme"))?;
+    let base_table = base.and_then(|b| b.get(variant)).and_then(|v| v.as_table());
 
+    // raw values first, so the theme's own refs resolve against its own tokens
     let mut tokens = ThemeTokens::new();
-
-    for &section in SECTIONS {
-        let table = match variant_table.get(section).and_then(|v| v.as_table()) {
-            Some(t) => t,
-            None => continue,
-        };
-
-        for (key, item) in table.iter() {
-            if let Some(value) = item.as_str() {
-                let resolved = resolve_refs(value, &tokens);
-                tokens.insert(format!("{section}-{key}"), resolved);
+    for table in base_table.into_iter().chain([variant_table]) {
+        for &section in SECTIONS {
+            let Some(section_table) = table.get(section).and_then(|v| v.as_table()) else {
+                continue;
+            };
+            for (key, item) in section_table.iter() {
+                if let Some(value) = item.as_str() {
+                    tokens.insert(format!("{section}-{key}"), value.to_string());
+                }
             }
         }
     }
 
-    // re-resolve iteratively until no progress — resolves forward refs and ref chains
-    loop {
+    // re-resolve until no progress — resolves forward refs and ref chains.
+    // capped because a reference cycle would otherwise oscillate forever
+    for _ in 0..32 {
         let mut progress = false;
         let keys: Vec<String> = tokens.keys().cloned().collect();
         for key in keys {

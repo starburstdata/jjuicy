@@ -81,11 +81,93 @@ primary = "#ff0000"
 
 #[test]
 fn parse_all_bundled_themes() {
-    // all bundled themes should parse without error
-    parse_theme(include_str!("../../res/themes/default.toml")).unwrap();
-    parse_theme(include_str!("../../res/themes/macos.toml")).unwrap();
-    parse_theme(include_str!("../../res/themes/material.toml")).unwrap();
-    parse_theme(include_str!("../../res/themes/fluent.toml")).unwrap();
+    // every bundled theme defines every default token itself, without inheriting
+    let default = default_theme();
+    for (name, content) in BUNDLED_THEMES {
+        let theme = parse_theme_standalone(content).unwrap();
+        for (variant, tokens, defaults) in [
+            ("light", &theme.light, &default.light),
+            ("dark", &theme.dark, &default.dark),
+        ] {
+            for key in defaults.keys() {
+                assert!(
+                    tokens.contains_key(key),
+                    "{name} [{variant}] is missing {key}"
+                );
+            }
+            for (key, value) in tokens {
+                assert!(
+                    !value.contains('$'),
+                    "{name} [{variant}] {key} has unresolved ref: {value}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn partial_theme_inherits_defaults() {
+    let toml = r##"
+[light.colors]
+primary = "#ff0000"
+
+[dark.colors]
+primary = "#00ff00"
+"##;
+    let theme = parse_theme(toml).unwrap();
+    let default = default_theme();
+    assert_eq!(theme.light.len(), default.light.len());
+    assert_eq!(theme.dark.len(), default.dark.len());
+    assert_eq!(
+        theme.light.get("colors-primary"),
+        Some(&"#ff0000".to_string())
+    );
+    assert_eq!(
+        theme.light.get("text-familyCode"),
+        default.light.get("text-familyCode")
+    );
+    // inherited refs resolve against the custom theme's values
+    assert_eq!(
+        theme.light.get("components-buttonBackground"),
+        Some(&"#ff0000".to_string())
+    );
+    assert_eq!(
+        theme.dark.get("colors-selectionBar"),
+        Some(&"#00ff00".to_string())
+    );
+}
+
+#[test]
+fn diff_and_syntax_tokens() {
+    let theme = default_theme();
+    for key in [
+        "colors-diffAddBg",
+        "colors-diffAddWordBg",
+        "colors-diffDelBg",
+        "colors-diffDelWordBg",
+        "colors-gutter",
+        "colors-selectionBar",
+        "colors-chipConflictBg",
+        "syntax-keyword",
+        "syntax-string",
+        "syntax-comment",
+        "text-sizeTitle",
+    ] {
+        assert!(theme.light.contains_key(key), "missing {key}");
+        assert!(theme.dark.contains_key(key), "missing {key}");
+    }
+}
+
+#[test]
+fn ref_cycle_terminates() {
+    let toml = r##"
+[light.colors]
+a = "$colors.b"
+b = "$colors.a"
+
+[dark.colors]
+"##;
+    parse_theme(toml).unwrap();
 }
 
 #[test]
