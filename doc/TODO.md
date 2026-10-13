@@ -11,7 +11,7 @@ UI Expansion
 ------------
 With some dynamic way to show extra panes, replace content, open new windows &c, more useful features would be possible:
 
-* View the repo at past ops.
+* View the repo at past ops (planned: ui-refresh phase 4).
 * Config UI, both for core stuff and gg's own settings.
 * Revision pinning for split/comparison workflows.
 * Better use of space in web mode.
