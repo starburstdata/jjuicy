@@ -103,3 +103,30 @@ ul,
 label {
   pointer-events: all;
 }
+
+/* keyboard focus is always visible, mouse focus never is (V-6) */
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ju-colors-focusRing);
+  outline-offset: -2px;
+}
+
+button:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.hairline-top {
+  border-top: var(--ju-components-borderSubtle);
+}
+
+.hairline-bottom {
+  border-bottom: var(--ju-components-borderSubtle);
+}
+
+.text-xs { font-size: var(--ju-text-sizeXs); }
+.text-sm { font-size: var(--ju-text-sizeSm); }
+.text-md { font-size: var(--ju-text-sizeMd); }
+.text-lg { font-size: var(--ju-text-sizeLg); }
+.text-title { font-size: var(--ju-text-sizeTitle); font-weight: var(--ju-text-weightHeavy); }
+.text-muted { color: var(--ju-colors-foregroundSubtle); }
