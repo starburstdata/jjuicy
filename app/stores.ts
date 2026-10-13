@@ -34,3 +34,23 @@ export function dragOverWidget(event: DragEvent) {
     event.stopPropagation();
     currentTarget.set(null);
 }
+export function persisted<T>(key: string, initial: T) {
+    let start = initial;
+    try {
+        let raw = localStorage.getItem(key);
+        if (raw !== null) start = JSON.parse(raw) as T;
+    } catch {
+        // corrupt or unavailable storage - use the default
+    }
+    let store = writable<T>(start);
+    store.subscribe(value => {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+            // storage unavailable - value just won't persist
+        }
+    });
+    return store;
+}
+
+export const sidebarCollapsed = persisted<boolean>("jjuicy.sidebarCollapsed", false);
