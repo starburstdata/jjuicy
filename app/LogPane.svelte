@@ -5,7 +5,7 @@
     import type { RevSet } from "./messages/RevSet";
     import { getInput, query, trigger } from "./ipc.js";
     import { sameChange } from "./ids.js";
-    import { ignoreToggled, repoStatusEvent, revisionSelectEvent } from "./stores.js";
+    import { ignoreToggled, logQueryRequest, repoStatusEvent, revisionSelectEvent } from "./stores.js";
     import RevisionMutator from "./mutators/RevisionMutator.js";
     import Pane from "./shell/Pane.svelte";
     import RevisionObject from "./objects/RevisionObject.svelte";
@@ -129,6 +129,12 @@
             lastStatusKey = key;
             loadLog(isFirst);
         }
+    }
+
+    $: if ($logQueryRequest !== null) {
+        entered_query = $logQueryRequest;
+        $logQueryRequest = null;
+        loadLog(true);
     }
 
     // index rows by commit hex so selection and per-row lookups stay O(1) as the graph grows

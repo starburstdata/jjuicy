@@ -15,6 +15,18 @@ The UI uses a couple of key conventions for discoverability:
 - Chrome and labels are greyscale; anything interactable uses specific colours to indicate
   categories of widget or object states.
 
+Layout
+------
+The window is a header, a body and a status bar (`app/Shell.svelte`).
+- The header (`app/shell/Header.svelte`) holds repo-level actions: sidebar toggle, refresh,
+  fetch/push, the repo/workspace breadcrumb, terminal and settings. It doubles as the window's
+  drag region, so interactive children must opt back in to pointer events.
+- The body is built from `SplitView` panes (`app/shell/SplitView.svelte`), whose sizes persist.
+- The status bar (`app/shell/StatusBar.svelte`) shows the latest operation with undo, and
+  counters from `RepoStatus.summary`. Clicking a counter filters the log through
+  `logQueryRequest`. The backend caps counts and skips the summary on large repos, so the
+  counters are cheap to keep current.
+
 Architectural Choices
 ---------------------
 In order to create a quality desktop app, a pure webapp is out of scope. However, significant

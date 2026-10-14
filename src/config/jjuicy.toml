@@ -6,6 +6,7 @@ default-mode = "gui" # "gui" or "web"
 log-page-size = 1000
 
 # Some query settings will default to false instead of true if a repo has this many commits.
+# Repos this large also skip the status bar's change/conflict counters.
 large-repo-heuristic = 100000
 
 # Take a snapshot when the window gains focus; slow in large checkouts. 

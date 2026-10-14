@@ -45,6 +45,7 @@ describe("LogPane", () => {
         repoStatusEvent.set({
             operation_description: "initial",
             working_copy: { type: "CommitId", hex: "0".repeat(40), prefix: "0000000", rest: "0000000000000000000000000000000" },
+            summary: null,
         });
 
         await waitFor(() => {

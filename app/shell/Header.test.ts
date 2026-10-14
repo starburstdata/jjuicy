@@ -17,6 +17,7 @@ function workspace(remotes: string[], name = "default"): RepoConfig {
         status: {
             operation_description: "initial",
             working_copy: { type: "CommitId", hex: "0".repeat(40), prefix: "0000000", rest: "0".repeat(33) },
+            summary: null,
         },
         mark_unpushed_bookmarks: false,
         track_recent_workspaces: true,
