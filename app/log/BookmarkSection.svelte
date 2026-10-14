@@ -3,8 +3,7 @@
     import type { DeleteRefs } from "../messages/DeleteRefs";
     import type { RevHeader } from "../messages/RevHeader";
     import { mutate, query } from "../ipc";
-    import { currentConfirmation, persisted, repoStatusEvent } from "../stores";
-    import { windowStorageKey } from "../shell/splitview";
+    import { currentConfirmation, repoStatusEvent } from "../stores";
     import BookmarkObject from "../objects/BookmarkObject.svelte";
     import {
         GROUP_TITLES,
@@ -23,10 +22,8 @@
     export let onShowInLog: (header: RevHeader) => void;
     export let count = 0;
 
-    const MIN_HEIGHT = 60;
     const GROUPS: BookmarkGroup[] = ["local", "tracked", "untracked"];
 
-    let height = persisted<number>(windowStorageKey("jjuicy.bookmarksHeight"), 160);
     let entries: BookmarkEntry[] = [];
     let error: string | null = null;
 
@@ -88,30 +85,10 @@
             absent,
         );
     }
-
-    let dragStart: { y: number; height: number } | null = null;
-
-    function startResize(event: MouseEvent) {
-        event.preventDefault();
-        dragStart = { y: event.clientY, height: $height };
-        window.addEventListener("mousemove", onResize);
-        window.addEventListener("mouseup", endResize);
-    }
-
-    function onResize(event: MouseEvent) {
-        if (!dragStart) return;
-        $height = Math.max(MIN_HEIGHT, Math.round(dragStart.height + event.clientY - dragStart.y));
-    }
-
-    function endResize() {
-        dragStart = null;
-        window.removeEventListener("mousemove", onResize);
-        window.removeEventListener("mouseup", endResize);
-    }
 </script>
 
 <section class="bookmarks" aria-label="Bookmarks">
-    <div class="rows" style="height: {$height}px">
+    <div class="rows">
         {#if error}
             <p class="error">{error}</p>
         {:else if entries.length == 0}
@@ -158,8 +135,6 @@
             {/if}
         </div>
     {/if}
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="resize" title="drag to resize" on:mousedown={startResize}></div>
 </section>
 
 <style>
@@ -167,11 +142,10 @@
         display: flex;
         flex-direction: column;
         font-size: var(--ju-text-sizeSm);
-        border-top: var(--ju-components-borderSubtle);
-        margin-top: 3px;
     }
 
     .rows {
+        max-height: 60vh;
         overflow-y: auto;
         pointer-events: auto;
         padding: 3px 3px 0 3px;
@@ -263,15 +237,5 @@
 
     .error {
         color: var(--ju-colors-error);
-    }
-
-    .resize {
-        height: 5px;
-        cursor: row-resize;
-        pointer-events: auto;
-
-        &:hover {
-            background: var(--ju-colors-surface);
-        }
     }
 </style>

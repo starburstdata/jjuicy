@@ -32,10 +32,11 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   drives a read-only banner over the log, and the worker refuses snapshots and mutations until
   the view returns to the head. Restore is a new operation, like `jj op restore`, so it can be
   undone.
-- The log column's bookmark section (`app/log/BookmarkSection.svelte`) groups local, tracked
+- The log column's bookmarks dropdown (`app/log/BookmarkSection.svelte`) groups local, tracked
   and untracked remote bookmarks with ahead/behind badges. Selecting one reveals its target,
   widening the revset when it isn't loaded. Cleanup (merged, absent) is one `DeleteRefs`
-  mutation, so it undoes in one step.
+  mutation, so it undoes in one step. The dropdown stays mounted while closed so its toggle
+  can show the count.
 - Log rows have a fixed height per `jjuicy.ui.log-density` (`app/log/density.ts`): compact
   rows are one line, comfortable rows are cards with id/refs, a two-line description and an
   author line. Virtualisation and graph geometry both read that height, so a row's content
