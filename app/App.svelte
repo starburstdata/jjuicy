@@ -2,7 +2,7 @@
     import { parseRoute } from "./route.js";
     import Shell from "./Shell.svelte";
     import LogPane from "./LogPane.svelte";
-    import RevisionPane from "./RevisionPane.svelte";
+    import DetailPane from "./detail/DetailPane.svelte";
     import FilesPane from "./files/FilesPane.svelte";
     import BoundQuery from "./controls/BoundQuery.svelte";
     import Pane from "./shell/Pane.svelte";
@@ -39,7 +39,7 @@
         {#snippet detailColumn()}
             <BoundQuery query={selection} let:data>
                 {#if data.type == "Detail"}
-                    <RevisionPane revs={data} />
+                    <DetailPane revs={data} />
                 {:else}
                     <Pane>
                         <h2 slot="header">Not Found</h2>
