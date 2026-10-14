@@ -21,3 +21,29 @@ export function splitSpans(text: string, tokens: DiffToken[]): Span[] {
     if (offset < text.length || spans.length == 0) spans.push({ text: text.slice(offset), changed: false });
     return spans;
 }
+
+export interface Part {
+    text: string;
+    cls: string | null;
+}
+
+// syntax classes are a second layer inside the word spans, so a changed word stays one highlight
+export function syntaxParts(spans: Span[], syntax: { start: number; end: number; cls: string }[]): Part[][] {
+    let offset = 0;
+    return spans.map((span) => {
+        let parts: Part[] = [];
+        let end = offset + span.text.length;
+        let at = offset;
+        for (let s of syntax) {
+            if (s.end <= at || s.start >= end) continue;
+            let from = Math.max(s.start, at);
+            let to = Math.min(s.end, end);
+            if (from > at) parts.push({ text: span.text.slice(at - offset, from - offset), cls: null });
+            parts.push({ text: span.text.slice(from - offset, to - offset), cls: s.cls });
+            at = to;
+        }
+        if (at < end || parts.length == 0) parts.push({ text: span.text.slice(at - offset), cls: null });
+        offset = end;
+        return parts;
+    });
+}

@@ -15,6 +15,9 @@
     import UnifiedRow from "./UnifiedRow.svelte";
     import SplitRow from "./SplitRow.svelte";
     import ConflictView from "./ConflictView.svelte";
+    import { DiffHighlighter, parserFor, type SyntaxSpan } from "./highlight";
+    import type { Parser } from "@lezer/common";
+    import type { DiffRow } from "../messages/DiffRow";
 
     export let set: RevSet;
     export let change: RevChangeSummary;
@@ -171,6 +174,20 @@
     });
 
     $: visible = items.slice(first, last);
+
+    let parser: Parser | null = null;
+    $: loadParser(change.path.repo_path);
+
+    async function loadParser(path: string) {
+        parser = null;
+        let loaded = await parserFor(path);
+        if (path == change.path.repo_path) parser = loaded;
+    }
+
+    // rebuilt with the items, since expanding context or switching mode changes the documents
+    $: highlighter = parser && items.length > 0 ? new DiffHighlighter(parser, items) : null;
+    let syntax: Map<DiffRow, SyntaxSpan[]> | null = null;
+    $: syntax = highlighter ? highlighter.ensure(first, last) : null;
 </script>
 
 <div class="viewer" bind:this={host}>
@@ -212,9 +229,9 @@
                                 trailing={item.trailing}
                                 on:expand={(e) => item.type == "gap" && onExpand(item.index, e.detail.all)} />
                         {:else if item.type == "row"}
-                            <UnifiedRow row={item.row} />
+                            <UnifiedRow row={item.row} syntax={syntax?.get(item.row)} />
                         {:else}
-                            <SplitRow pair={item.pair} />
+                            <SplitRow pair={item.pair} {syntax} />
                         {/if}
                     {/each}
                 </div>
