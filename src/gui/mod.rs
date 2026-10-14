@@ -1,4 +1,5 @@
 mod handler;
+mod launch;
 mod menu;
 #[cfg(target_os = "macos")]
 mod recent_items;
@@ -196,6 +197,8 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             query_revisions,
             query_remotes,
             query_snapshot,
+            open_terminal,
+            open_user_config,
             abandon_revisions,
             backout_revisions,
             checkout_revision,
@@ -345,6 +348,17 @@ fn forward_context_menu(
     };
     menu::handle_context(window, context, ignore_immutable).map_err(InvokeError::from_anyhow)?;
     Ok(())
+}
+
+#[tauri::command]
+fn open_terminal(path: String) {
+    // a trigger error would show as a lost connection, so just log
+    handler::nonfatal!(launch::open_terminal(&PathBuf::from(path)));
+}
+
+#[tauri::command]
+fn open_user_config() {
+    handler::nonfatal!(jjuicy_lib::config::open_user_config());
 }
 
 #[tauri::command]
@@ -940,8 +954,15 @@ pub fn try_create_window(
     .focused(true)
     .visible(false)
     .disable_drag_drop_handler()
-    .initialization_script(&init_script)
-    .build()?;
+    .initialization_script(&init_script);
+
+    // the header doubles as the title bar; it leaves room for the traffic lights
+    #[cfg(target_os = "macos")]
+    let window = window
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    let window = window.build()?;
 
     // create a worker for the specified path
     let (sender, receiver) = channel();

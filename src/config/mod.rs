@@ -12,6 +12,7 @@ pub mod tests;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
@@ -351,4 +352,44 @@ pub fn build_fileset_aliases_map(stacked_config: &StackedConfig) -> Result<Files
         }
     }
     Ok(aliases_map)
+}
+
+/// open the user's jj config file in the default editor, creating it if needed
+pub fn open_user_config() -> Result<()> {
+    let config_env = ConfigEnv::from_environment();
+    let path = config_env
+        .user_config_paths()
+        .next()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| anyhow!("no user config path found"))?;
+
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, "")?;
+    }
+
+    open_path(&path)
+}
+
+fn open_path(path: &Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        // -t: text editor, not whichever app claims .toml
+        let mut c = Command::new("open");
+        c.arg("-t");
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = Command::new("xdg-open");
+
+    command.arg(path).spawn()?;
+    Ok(())
 }

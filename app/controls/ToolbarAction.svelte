@@ -3,14 +3,19 @@
     import type { Snippet } from "svelte";
 
     export let icon: string;
-    export let label: string;
+    export let label: string = "";
     export let tip: string = "";
-    export let onClick: (e: MouseEvent) => void;
+    // without onClick, the body opens the dropdown
+    export let onClick: ((e: MouseEvent) => void) | undefined = undefined;
     export let disabled: boolean = false;
+    export let busy: boolean = false;
+    export let pressed: boolean | undefined = undefined;
     export let dropdown: Snippet<[{ close: () => void }]> | undefined = undefined;
 
     let root: HTMLElement;
     let open = false;
+
+    $: menuOnly = !onClick && !!dropdown;
 
     function onWindowClick(event: MouseEvent) {
         if (open && !root.contains(event.target as Node)) {
@@ -27,32 +32,54 @@
     function close() {
         open = false;
     }
+
+    function onBody(event: MouseEvent) {
+        if (disabled) return;
+        if (menuOnly) {
+            open = !open;
+        } else {
+            onClick?.(event);
+        }
+    }
 </script>
 
 <svelte:window on:click={onWindowClick} on:keydown={onKeyDown} />
 
-<div class="toolbar-action" bind:this={root}>
+<div class="toolbar-action" class:split={dropdown && !menuOnly} bind:this={root}>
     <button
         class="body"
-        {disabled}
-        title={disabled ? "" : tip}
-        on:click|stopPropagation={disabled ? undefined : onClick}>
-        <span class="icon-slot"><Icon name={icon} /></span>
-        <span class="label">{label}</span>
+        class:busy
+        class:icon-only={!label}
+        disabled={disabled || busy}
+        title={tip || label}
+        aria-label={label || tip}
+        aria-pressed={pressed}
+        aria-haspopup={menuOnly ? "menu" : undefined}
+        aria-expanded={menuOnly ? open : undefined}
+        on:click|stopPropagation={onBody}>
+        <span class="icon-slot"><Icon name={busy ? "loader" : icon} /></span>
+        {#if label}
+            <span class="label">{label}</span>
+        {/if}
+        {#if menuOnly}
+            <span class="inline-chevron"><Icon name="chevron-down" /></span>
+        {/if}
     </button>
-    {#if dropdown}
+    {#if dropdown && !menuOnly}
         <button
             class="chevron"
+            aria-label="more {label || tip} options"
             aria-haspopup="menu"
             aria-expanded={open}
-            on:click={() => (open = !open)}>
+            disabled={disabled || busy}
+            on:click|stopPropagation={() => (open = !open)}>
             <Icon name="chevron-down" />
         </button>
-        {#if open}
-            <div class="dropdown" role="menu">
-                {@render dropdown({ close })}
-            </div>
-        {/if}
+    {/if}
+    {#if open && dropdown}
+        <div class="dropdown" role="menu">
+            {@render dropdown({ close })}
+        </div>
     {/if}
 </div>
 
@@ -60,117 +87,128 @@
     .toolbar-action {
         position: relative;
         display: flex;
-        align-items: stretch;
-        height: 100%;
+        align-items: center;
+        pointer-events: auto;
     }
 
-    .body {
-        display: grid;
-        grid-template-rows: 1fr auto;
-        gap: 2px;
-        padding: 6px 8px;
-        justify-items: center;
-        align-items: start;
-        min-height: 0;
+    button {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: var(--ju-components-buttonHeight);
+        padding: 0 8px;
 
         background: transparent;
         border: none;
+        border-radius: var(--ju-components-radiusSm);
         box-shadow: none;
         color: var(--ju-colors-foreground);
         font-family: var(--ju-text-familyUi);
+        font-size: var(--ju-text-sizeMd);
+        white-space: nowrap;
         cursor: pointer;
         transition: background var(--ju-components-transitionFast);
     }
 
-    .body:not(:disabled):hover {
+    button:not(:disabled):hover,
+    button[aria-expanded="true"],
+    button[aria-pressed="true"] {
         background: var(--ju-colors-surfaceAlt);
     }
 
-    .body:disabled {
-        background: transparent;
+    button:disabled {
         color: var(--ju-colors-outlineStrong);
         cursor: default;
+    }
+
+    .body.busy {
+        color: var(--ju-colors-foregroundMuted);
+    }
+
+    .body.icon-only {
+        padding: 0 6px;
+    }
+
+    .split .body {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        padding-right: 4px;
+    }
+
+    .chevron {
+        padding: 0 3px;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
     }
 
     .icon-slot {
         display: flex;
         align-items: center;
-        justify-content: center;
-        min-height: 0;
-        aspect-ratio: 1 / 1;
-        height: 100%;
     }
 
-    /* override Icon.svelte's fixed 16×16 so the icon scales with toolbar height */
-    .icon-slot :global(svg.feather) {
-        width: auto;
-        height: 100%;
-        max-width: 100%;
-        min-width: 0;
+    .busy .icon-slot {
+        animation: spin 1.2s linear infinite;
     }
 
-    .label {
-        font-size: var(--ju-text-sizeSm);
-        line-height: var(--ju-text-lineHeightTight);
-        white-space: nowrap;
+    .chevron :global(svg.feather),
+    .inline-chevron :global(svg.feather) {
+        width: 12px;
+        height: 12px;
+        min-width: 12px;
     }
 
-    .chevron {
+    .inline-chevron {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 14px;
-        height: 100%;
-        padding: 0;
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        color: var(--ju-colors-foreground);
-        cursor: pointer;
-        transition: background var(--ju-components-transitionFast);
-    }
-
-    .chevron:hover {
-        background: var(--ju-colors-surfaceAlt);
-    }
-
-    /* keep chevron icon small regardless of toolbar height */
-    .chevron :global(svg.feather) {
-        width: 10px;
-        height: 10px;
-        min-width: 10px;
+        color: var(--ju-colors-foregroundMuted);
     }
 
     .dropdown {
         position: absolute;
-        top: 100%;
+        top: calc(100% + 2px);
         left: 0;
         z-index: 100;
+        pointer-events: auto;
         background: var(--ju-colors-background);
         border: 1px solid var(--ju-colors-surfaceStrong);
         border-radius: var(--ju-components-radiusSm);
         box-shadow: var(--ju-shadows-shadowMd);
-        min-width: 140px;
+        min-width: 160px;
+        max-width: 480px;
         padding: 2px 0;
     }
 
     .dropdown :global(button) {
-        display: flex;
         width: 100%;
+        height: auto;
         padding: 6px 12px;
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        color: var(--ju-colors-foreground);
-        font-family: var(--ju-text-familyUi);
-        font-size: var(--ju-text-sizeMd);
+        border-radius: 0;
         text-align: left;
-        white-space: nowrap;
-        cursor: pointer;
-        transition: background var(--ju-components-transitionFast);
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .dropdown :global(button:hover) {
         background: var(--ju-colors-surface);
+    }
+
+    .dropdown :global(hr) {
+        margin: 2px 0;
+        border: none;
+        border-top: 1px solid var(--ju-colors-surfaceStrong);
+    }
+
+    .dropdown :global(.menu-heading) {
+        display: block;
+        padding: 4px 12px 2px;
+        font-size: var(--ju-text-sizeXs);
+        color: var(--ju-colors-foregroundMuted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 </style>
