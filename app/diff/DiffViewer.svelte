@@ -14,10 +14,11 @@
     import ContextSeparator from "./ContextSeparator.svelte";
     import UnifiedRow from "./UnifiedRow.svelte";
     import SplitRow from "./SplitRow.svelte";
+    import ConflictView from "./ConflictView.svelte";
 
     export let set: RevSet;
     export let change: RevChangeSummary;
-    // non-null only when hunks can be dragged
+    // non-null only for a single revision, where hunks can be dragged and conflicts resolved
     export let header: RevHeader | null;
 
     // every item is the same height, so the visible window is a division away
@@ -156,6 +157,10 @@
         <div class="placeholder">{error}</div>
     {:else if diff && (diff.kind.type == "Binary" || diff.kind.type == "TooLarge")}
         <BinaryCard kind={diff.kind} />
+    {:else if diff && diff.kind.type == "Conflict" && diff.conflict}
+        <div class="scroll">
+            <ConflictView blocks={diff.conflict} path={change.path} {header} />
+        </div>
     {:else if diff && diff.hunks.length == 0}
         <div class="placeholder">No content changes</div>
     {:else if diff}

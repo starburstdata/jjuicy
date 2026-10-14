@@ -38,7 +38,7 @@
                 {#each shownChanges as change (change.path.repo_path)}
                     <div class="change">
                         <FileHeader {change} header={singleton ? newest : null} />
-                        <DiffViewer set={revs.set} {change} header={!change.has_conflict && singleton ? newest : null} />
+                        <DiffViewer set={revs.set} {change} header={singleton ? newest : null} />
                     </div>
                 {/each}
             </div>
