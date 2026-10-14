@@ -157,6 +157,8 @@
                 disabled={!changeEnabled.move_to_working_copy}
                 on:click={() => onClick("move_to_working_copy")}>Move to working copy</button>
         {/if}
+        <hr />
+        <button on:click={() => onClick("show_history")}>Show history</button>
     {:else if operand.type === "Ref" && refEnabled}
         <button disabled={!refEnabled.track} on:click={() => onClick("track")}>Track</button>
         <button disabled={!refEnabled.untrack} on:click={() => onClick("untrack")}>Untrack</button>

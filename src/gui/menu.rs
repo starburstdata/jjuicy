@@ -311,6 +311,14 @@ pub fn build_context(
                 true,
                 None::<&str>,
             )?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &MenuItem::with_id(
+                app_handle,
+                "tree_show_history",
+                "Show history",
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 
@@ -678,6 +686,7 @@ pub fn handle_event(window: &Window, event: MenuEvent) -> Result<()> {
         "tree_move_to_working_copy" => {
             window.emit_to(target, "jjuicy://context/tree", "move_to_working_copy")?
         }
+        "tree_show_history" => window.emit_to(target, "jjuicy://context/tree", "show_history")?,
         "bookmark_track" => window.emit_to(target, "jjuicy://context/bookmark", "track")?,
         "bookmark_untrack" => window.emit_to(target, "jjuicy://context/bookmark", "untrack")?,
         "bookmark_push_all" => window.emit_to(target, "jjuicy://context/bookmark", "push-all")?,
