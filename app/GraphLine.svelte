@@ -3,8 +3,14 @@
     import type { Operand } from "./messages/Operand";
     import Zone from "./objects/Zone.svelte";
     import { currentTarget } from "./stores";
+    import type { RowGeometry } from "./log/density";
 
     export let line: EnhancedLine;
+    export let geometry: RowGeometry;
+
+    // not reactive: lines are re-keyed on every log load, and density only changes with a reload
+    let H = geometry.rowHeight;
+    let nodeY = geometry.nodeY;
 
     let isMerge = line.type == "ToIntersection";
     let allowEarlyBreak = line.type == "FromNode";
@@ -18,8 +24,8 @@
     // draw path downward, from child to parent
     let path: string;
 
-    let childY = r1 * 30 + 21;
-    let parentY = r2 * 30 + 9;
+    let childY = r1 * H + nodeY + 6;
+    let parentY = r2 * H + nodeY - 6;
 
     type Block = { x: number; y: number; w: number; h: number };
     let blocks: Block[] = [];
@@ -70,7 +76,7 @@
         let viaX = line.via * 18 + 9;
         let parentX = c2 * 18 + 9;
         let topMidY = childY + 9;
-        let botMidY = r2 * 30;
+        let botMidY = r2 * H;
         let topRadius = viaX > childX ? 6 : -6;
         let topSweep = viaX > childX ? 0 : 1;
         let botRadius = parentX > viaX ? 6 : -6;
@@ -113,11 +119,11 @@
 
         // same-row lines (a redirected ToIntersection after a rescue) have no
         // vertical extent, so don't emit a backdrop with negative height.
-        let h = (r2 - r1) * 30 - 12;
+        let h = (r2 - r1) * H - 12;
         if (h > 0) {
             blocks.push({
                 x: c1 * 18 + 2,
-                y: r1 * 30 + 21,
+                y: childY,
                 w: 14,
                 h,
             });
@@ -131,7 +137,7 @@
         // the target column would span the rescuing commit's circle. regular
         // ToNode curves still bend early near the source so they read as
         // descending from the child toward the parent.
-        let midY = allowEarlyBreak && c1 > c2 ? r2 * 30 : childY + 9;
+        let midY = allowEarlyBreak && c1 > c2 ? r2 * H : childY + 9;
         let radius = c2 > c1 ? 6 : -6;
         let sweep = c2 > c1 ? 0 : 1;
         path = `M${childX},${childY}

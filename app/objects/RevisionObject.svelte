@@ -3,7 +3,7 @@
     import type { RevHeader } from "../messages/RevHeader";
     import type { StoreRef } from "../messages/StoreRef";
     import type { Operand } from "../messages/Operand";
-    import { ignoreToggled, currentTarget, revisionSelectEvent } from "../stores.js";
+    import { ignoreToggled, currentTarget, revisionSelectEvent, logDensity } from "../stores.js";
     import Chip from "../controls/Chip.svelte";
     import Icon from "../controls/Icon.svelte";
     import IdSpan from "../controls/IdSpan.svelte";
@@ -14,6 +14,8 @@
     import TagObject from "./TagObject.svelte";
     import AuthorSpan from "../controls/AuthorSpan.svelte";
     import WorkspaceObject from "./WorkspaceObject.svelte";
+    import Avatar from "../controls/Avatar.svelte";
+    import TimestampSpan from "../controls/TimestampSpan.svelte";
 
     export let header: RevHeader;
     export let child: RevHeader | null = null;
@@ -22,6 +24,9 @@
     export let hiddenForks: string[] = [];
     export let onClick: ((header: RevHeader) => void) | undefined = undefined;
     export let onShiftClick: ((header: RevHeader) => void) | undefined = undefined;
+
+    // parent rows in the detail pane are always single-line
+    $: card = !child && $logDensity == "comfortable";
 
     let forkMenu: { label: string; x: number; y: number } | null = null;
 
@@ -65,6 +70,7 @@
     // Key that changes when the chip set (not just display) changes. We re-measure
     // widths only when this changes, so applying the plan doesn't cause a loop.
     $: contentKey = JSON.stringify({
+        c: card,
         f: hiddenForks,
         b: bookmarkRefs.map((r) =>
             r.type === "LocalBookmark" ? r.bookmark_name : `${r.bookmark_name}@${r.remote_name}`,
@@ -76,6 +82,8 @@
     let layoutEl: HTMLElement | undefined;
     let emailEl: HTMLElement | undefined;
     let refsEl: HTMLElement | undefined;
+    let idEl: HTMLElement | undefined;
+    let flagsEl: HTMLElement | undefined;
     let availableWidth = Infinity;
     let chipWidths: number[] = [];
     let measuredKey = "";
@@ -94,9 +102,16 @@
 
     function recomputeAvailable() {
         if (!layoutEl) return;
+        if (card) {
+            // chips share the first line with the id and flags only; the description has its own line
+            let style = getComputedStyle(layoutEl);
+            let innerW = layoutEl.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+            let idW = idEl?.getBoundingClientRect().width ?? 0;
+            let flagsW = flagsEl?.getBoundingClientRect().width ?? 0;
+            availableWidth = Math.max(0, innerW - idW - flagsW - 2 * 6);
+            return;
+        }
         let layoutW = layoutEl.clientWidth;
-        // IdSpan renders as the first element in the flex row
-        let idEl = layoutEl.firstElementChild as HTMLElement | null;
         let idW = idEl?.getBoundingClientRect().width ?? 0;
         // offsetParent is null when display:none — author column hides below 1680px
         let emailVisible = emailEl != null && emailEl.offsetParent != null;
@@ -359,10 +374,15 @@
         </div>
     {:else}
         <Zone {operand} let:target let:hint={dropHint}>
-            <div class="layout" class:target bind:this={layoutEl}>
-                <IdSpan id={header.id.change} pronoun={context || target || dropHint != null} />
+            <div class="layout" class:card class:target bind:this={layoutEl}>
+                <span class="idcell" bind:this={idEl}>
+                    <IdSpan id={header.id.change} pronoun={context || target || dropHint != null} />
+                </span>
 
-                <span class="text desc truncate" class:indescribable={!context && header.description.lines[0] == ""}>
+                <span
+                    class="text desc"
+                    class:truncate={!card}
+                    class:indescribable={!context && header.description.lines[0] == ""}>
                     {dragHint ??
                         dropHint ??
                         (header.description.lines[0] == "" ? "(no description set)" : header.description.lines[0])}
@@ -422,7 +442,35 @@
                     {/if}
                 </span>
 
-                <span class="email" bind:this={emailEl}><AuthorSpan author={header.author} /></span>
+                {#if card}
+                    <span class="flags" bind:this={flagsEl}>
+                        {#if header.has_conflict}
+                            <Chip context={false} target={false} immobile variant="conflict" tip="has conflicts">
+                                <Icon name="alert-triangle" />
+                                <span>conflict</span>
+                            </Chip>
+                        {/if}
+                        {#if header.id.change.is_divergent}
+                            <Chip context={false} target={false} immobile variant="divergent" tip="divergent change">
+                                <span>divergent</span>
+                            </Chip>
+                        {/if}
+                        {#if header.is_immutable}
+                            <Chip context={false} target={false} immobile variant="immutable" tip="immutable">
+                                <Icon name="lock" />
+                            </Chip>
+                        {/if}
+                    </span>
+
+                    <span class="meta">
+                        <IdSpan id={header.id.commit} />
+                        <Avatar author={header.author} />
+                        <AuthorSpan author={header.author} />
+                        <TimestampSpan timestamp={header.author.timestamp} />
+                    </span>
+                {:else}
+                    <span class="email" bind:this={emailEl}><AuthorSpan author={header.author} /></span>
+                {/if}
             </div>
         </Zone>
     {/if}
@@ -455,6 +503,76 @@
 
         /* skip past svg lines when used in a graph */
         padding-left: var(--leftpad);
+    }
+
+    /* three fixed rows - GraphLog relies on a constant height per density */
+    .layout.card {
+        height: 76px;
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr);
+        grid-template-rows: 20px 34px 18px;
+        grid-template-areas:
+            "id flags refs"
+            "desc desc desc"
+            "meta meta meta";
+        gap: 0 6px;
+        align-items: center;
+        padding-top: 4px;
+        padding-right: 6px;
+    }
+
+    .layout.card:not(.target):hover {
+        background: color-mix(in srgb, var(--ju-colors-selectionTint) 50%, transparent);
+    }
+
+    .layout.card > :global(span) {
+        line-height: normal;
+    }
+
+    .card .idcell {
+        grid-area: id;
+    }
+
+    .card .flags {
+        grid-area: flags;
+        display: flex;
+        gap: 3px;
+    }
+
+    .card .refs {
+        grid-area: refs;
+        justify-content: start;
+    }
+
+    .card .desc {
+        align-self: start;
+        font-size: var(--ju-text-sizeMd);
+        line-height: 17px;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+    }
+
+    .card .meta {
+        grid-area: meta;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        overflow: hidden;
+        font-size: var(--ju-text-sizeSm);
+        font-family: var(--ju-text-familyUi);
+    }
+
+    .card .meta :global(.id) {
+        font-size: var(--ju-text-sizeSm);
+    }
+
+    .card .meta :global(.id .prefix) {
+        color: var(--ju-colors-foregroundMuted);
     }
 
     .layout.target {

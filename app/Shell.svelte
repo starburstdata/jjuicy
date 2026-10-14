@@ -13,10 +13,13 @@
         selectionHeaders,
         currentInput,
         hasMenu,
-
         lastFocus,
         ignoreToggled,
+        logDensity,
+        avatarMode,
     } from "./stores.js";
+    import { parseDensity } from "./log/density";
+    import { parseAvatarMode } from "./controls/avatar";
     import ContextMenu from "./controls/ContextMenu.svelte";
     import RefMutator from "./mutators/RefMutator";
     import ChangeMutator from "./mutators/ChangeMutator";
@@ -176,6 +179,8 @@
         $revisionSelectEvent = undefined;
         if (config.type == "Workspace") {
             settings.markUnpushedBookmarks = config.mark_unpushed_bookmarks;
+            logDensity.set(parseDensity(config.log_density));
+            avatarMode.set(parseAvatarMode(config.avatars));
             ignoreToggled.set(config.ignore_immutable);
             $repoStatusEvent = config.status;
         }
