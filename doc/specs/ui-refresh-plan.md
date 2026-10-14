@@ -238,6 +238,14 @@ Goal: the new chrome around the *existing* log and revision panes. No behavioura
 - `doc/TODO.md` is updated.
 - Cut the **new major version** from `ui-refresh` (merge into `master`, then the release script).
 
+**Phase 3 results** (release backend, headless Chromium, via `e2e/perf-budgets.test.ts`):
+
+| Budget (PRD §7) | Scenario | Measured |
+|---|---|---|
+| Revision selection → paint < 100ms | 500-file revision | 36–57ms median, with occasional ~100ms first samples. It was 44–117ms before chunked file-list mounting. |
+| File selection → diff paint < 150ms | 2k-line Rust file, highlighted | 70–82ms |
+| Log scroll 60fps at 10k rows | — | Not measurable headlessly; tracked in `doc/TODO.md` |
+
 ## Phase 4 – Bookmark section & op log (B-*, O-*)
 
 ### 4.1 Bookmark section (B-1 to B-3)

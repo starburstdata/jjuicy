@@ -17,6 +17,10 @@ cargo run                      # Launch GUI (uses prebuilt assets)
 cargo run -- web               # Launch in web mode (opens browser)
 ```
 
+e2e tests (`e2e/`) run against `ju web`. `JU_BIN=target/release/ju` skips `cargo run` (and
+gives realistic timings, but embeds the `dist/` from its last build). Opt-in suite:
+`JU_PERF=1` (`perf-budgets.test.ts`) logs selection timings.
+
 **Before committing:** Run `cargo clippy` and `cargo fmt` to ensure code quality and consistent formatting.
 
 ## Architecture
@@ -160,6 +164,7 @@ Use `let` instead of `const` for variable declarations.
 - `app/Shell.svelte` - Window layout: header, SplitView panes, status bar (`app/shell/`)
 - `app/detail/DetailPane.svelte` - Revision detail: header, actions, parents, changes (`app/detail/`)
 - `app/diff/DiffViewer.svelte` - Per-file diff: unified/split rows, context expansion, conflicts, highlighting (`app/diff/`)
+- `app/perf.ts` - selection→paint `performance.measure` marks
 - `app/mutators/BinaryMutator.ts` - All drag-drop policies
 - `app/mutators/enablement.ts` - Revision action enablement; must match `src/gui/menu.rs`
 - `app/ipc.ts` - IPC abstraction with runtime detection

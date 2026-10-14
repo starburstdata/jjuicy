@@ -39,6 +39,8 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   headers are `HunkObject`s, so hunks drag onto revisions like files do. "All files" stacks a
   viewer per file and loads each as it scrolls into view. Highlighting (Lezer) runs over each
   hunk's whole old/new text and is sliced per line, so multi-line tokens colour correctly.
+- The files column mounts long lists in chunks over several frames, to keep selection→paint
+  inside the budget; `app/perf.ts` records those timings as `performance.measure` entries.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
   `chip*` theme tokens. Selection is a tint and a left bar rather than a fill, so chip and id
   colours stay legible on the selected row.

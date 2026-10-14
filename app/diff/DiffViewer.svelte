@@ -18,6 +18,7 @@
     import { DiffHighlighter, parserFor, type SyntaxSpan } from "./highlight";
     import type { Parser } from "@lezer/common";
     import type { DiffRow } from "../messages/DiffRow";
+    import { beginMeasure, endMeasure } from "../perf";
 
     export let set: RevSet;
     export let change: RevChangeSummary;
@@ -43,6 +44,8 @@
     $: load(set, change, inView);
 
     async function load(forSet: RevSet, forChange: RevChangeSummary, forView: boolean) {
+        // all-files mode loads many viewers at once, which would make the timing meaningless
+        if (!lazy) beginMeasure("select-file");
         let key = diffKey(forSet, forChange.path.repo_path);
         let cached = diffCache.get(key);
         if (cached) {
@@ -69,6 +72,7 @@
         }
         diff = value;
         error = null;
+        if (!lazy) endMeasure("select-file");
     }
 
     $: gaps = diff ? computeGaps(diff.hunks, diff.new_line_count) : [];

@@ -141,4 +141,14 @@ describe("FilesPane", () => {
         expect(container.textContent).toContain("main.rs");
         expect(container.textContent).not.toContain("readme.md");
     });
+    it("mounts long file lists in chunks", async () => {
+        let { default: FilesPane } = await import("./FilesPane.svelte");
+        let changes = Array.from({ length: 120 }, (_, i) => mkChange(`f${String(i).padStart(3, "0")}.txt`));
+        let { container } = render(FilesPane, { props: { revs: mkRevs("aaaaaaaa", changes) } });
+        await tick();
+        expect(container.textContent).toContain("120 files");
+        let count = () => container.querySelectorAll("[aria-selected]").length;
+        expect(count()).toBeLessThan(120);
+        await expect.poll(count).toBe(120);
+    });
 });
