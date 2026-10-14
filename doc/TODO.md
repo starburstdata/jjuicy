@@ -15,3 +15,7 @@ With some dynamic way to show extra panes, replace content, open new windows &c,
 * Config UI, both for core stuff and gg's own settings.
 * Revision pinning for split/comparison workflows.
 * Better use of space in web mode.
+
+UI Refresh Follow-ups
+---------------------
+* Hunk context menu: "move to child" (needs a target picker when there are several children).

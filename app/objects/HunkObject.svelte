@@ -10,7 +10,8 @@
     export let path: TreePath;
     export let hunk: ChangeHunk;
 
-    let operand: Operand | null =
+    // reactive: hunk rows are reused when the selected revision changes
+    $: operand = (
         header == null
             ? null
             : {
@@ -18,7 +19,7 @@
                   headers: [header],
                   path,
                   hunk,
-              };
+              }) as Operand | null;
 
     function getHunkDescription(hunk: ChangeHunk): string {
         return `@@ -${hunk.location.from_file.start},${hunk.location.from_file.len} +${hunk.location.to_file.start},${hunk.location.to_file.len} @@`;

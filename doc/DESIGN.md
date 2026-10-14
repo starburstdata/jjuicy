@@ -34,6 +34,9 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   detail pane share one `selectedFile` store; each resolves it against its own revisions, so a
   file stays selected across revisions that touch it and falls back to the first file otherwise.
   File rows are `ChangeObject`s, so they remain drag sources for moving changes between revisions.
+- The detail pane ends in the diff viewer (`app/diff/DiffViewer.svelte`), which fetches one
+  file at a time with `query_file_diff`; revision queries only carry per-file summaries. Hunk
+  headers are `HunkObject`s, so hunks drag onto revisions like files do.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
   `chip*` theme tokens. Selection is a tint and a left bar rather than a fill, so chip and id
   colours stay legible on the selected row.

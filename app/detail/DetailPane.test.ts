@@ -3,6 +3,7 @@ import { render, fireEvent } from "@testing-library/svelte";
 import type { RevsResult } from "../messages/RevsResult";
 import type { RevHeader } from "../messages/RevHeader";
 import { setupMocks, cleanupMocks } from "../mocks";
+import { diffCache } from "../diff/cache";
 
 type Detail = Extract<RevsResult, { type: "Detail" }>;
 
@@ -61,6 +62,7 @@ describe("DetailPane", () => {
     let calls: { cmd: string; args: any }[];
 
     beforeEach(() => {
+        diffCache.clear();
         calls = [];
         setupMocks((cmd, args) => {
             calls.push({ cmd, args });
@@ -138,5 +140,84 @@ describe("DetailPane", () => {
 
         await fireEvent.click(button(container, "New child")!);
         await vi.waitFor(() => expect(calls.some((c) => c.cmd == "create_revision")).toBe(true));
+    });
+
+    it("fetches and renders the selected file's diff", async () => {
+        setupMocks((cmd, args) => {
+            calls.push({ cmd, args });
+            if (cmd != "query_file_diff") return { type: "Unchanged" };
+            return {
+                path: args.path,
+                old_path: null,
+                kind: { type: "Text" },
+                hunks: [
+                    {
+                        header: {
+                            location: { from_file: { start: 1, len: 1 }, to_file: { start: 1, len: 1 } },
+                            lines: { lines: ["-old", "+new"] },
+                        },
+                        rows: [
+                            { kind: "Removed", old_line: 1, new_line: null, text: "old", tokens: [] },
+                            { kind: "Added", old_line: null, new_line: 1, text: "new", tokens: [] },
+                        ],
+                    },
+                ],
+                conflict: null,
+                old_line_count: 1,
+                new_line_count: 1,
+            };
+        });
+        let revs = mkRevs();
+        revs.changes = [
+            {
+                kind: "Modified",
+                path: { repo_path: "a.txt", relative_path: "a.txt" },
+                old_path: null,
+                has_conflict: false,
+                added: 1,
+                removed: 1,
+                binary: false,
+            },
+        ];
+        let { default: DetailPane } = await import("./DetailPane.svelte");
+        let { container } = render(DetailPane, { props: { revs } });
+
+        await vi.waitFor(() => expect(container.querySelector(".diff .add .code")?.textContent).toBe("new"));
+        expect(container.querySelector(".diff .remove .code")?.textContent).toBe("old");
+        let request = calls.find((c) => c.cmd == "query_file_diff")!.args;
+        expect(request.path.repo_path).toBe("a.txt");
+        expect(request.set).toEqual(revs.set);
+    });
+
+    it("shows a placeholder for binary files", async () => {
+        setupMocks((cmd, args) =>
+            cmd == "query_file_diff"
+                ? {
+                      path: args.path,
+                      old_path: null,
+                      kind: { type: "Binary", old_size: 10, new_size: 20 },
+                      hunks: [],
+                      conflict: null,
+                      old_line_count: 0,
+                      new_line_count: 0,
+                  }
+                : { type: "Unchanged" },
+        );
+        let revs = mkRevs();
+        revs.changes = [
+            {
+                kind: "Modified",
+                path: { repo_path: "img.png", relative_path: "img.png" },
+                old_path: null,
+                has_conflict: false,
+                added: 0,
+                removed: 0,
+                binary: true,
+            },
+        ];
+        let { default: DetailPane } = await import("./DetailPane.svelte");
+        let { container } = render(DetailPane, { props: { revs } });
+
+        await vi.waitFor(() => expect(container.textContent).toContain("Binary file (10 → 20 bytes)"));
     });
 });

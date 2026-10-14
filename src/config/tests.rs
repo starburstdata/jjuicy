@@ -134,6 +134,23 @@ fn large_repo_heuristic_default() {
 }
 
 #[test]
+fn max_diff_bytes_default() {
+    let settings = settings_with_gg_defaults();
+    assert_eq!(settings.query_max_diff_bytes(), 2097152);
+}
+
+#[test]
+fn max_diff_bytes_can_be_overridden() {
+    let settings = settings_with_overrides(
+        r#"
+            [jjuicy.queries]
+            max-diff-bytes = 10
+            "#,
+    );
+    assert_eq!(settings.query_max_diff_bytes(), 10);
+}
+
+#[test]
 fn auto_snapshot_default_is_none() {
     let settings = settings_with_gg_defaults();
     assert!(settings.query_auto_snapshot().is_none());

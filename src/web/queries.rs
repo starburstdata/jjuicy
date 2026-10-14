@@ -7,8 +7,8 @@ use axum::{Json, Router, extract::State, routing::post};
 use serde::Deserialize;
 
 use crate::messages::{
-    RepoConfig, RepoStatus, RevSet,
-    queries::{LogPage, RevsResult},
+    RepoConfig, RepoStatus, RevSet, TreePath,
+    queries::{FileDiff, FileSide, LogPage, RevsResult},
 };
 use crate::worker::SessionEvent;
 
@@ -21,6 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/query_log", post(query_log))
         .route("/query_log_next_page", post(query_log_next_page))
         .route("/query_revisions", post(query_revisions))
+        .route("/query_file_diff", post(query_file_diff))
+        .route("/query_file_lines", post(query_file_lines))
         .route("/query_remotes", post(query_remotes))
         .route("/query_recent_workspaces", post(query_recent_workspaces))
         .route("/query_snapshot", post(query_snapshot))
@@ -99,6 +101,54 @@ async fn query_revisions(
     state
         .worker_tx
         .send(SessionEvent::QueryRevisions { tx, set: req.set })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct QueryFileDiff {
+    set: RevSet,
+    path: TreePath,
+    context: u32,
+}
+
+async fn query_file_diff(
+    State(state): State<AppState>,
+    Json(req): Json<QueryFileDiff>,
+) -> Result<Json<FileDiff>, ApiError> {
+    let (tx, rx) = channel();
+    state.worker_tx.send(SessionEvent::QueryFileDiff {
+        tx,
+        set: req.set,
+        path: req.path,
+        context: req.context,
+    })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct QueryFileLines {
+    set: RevSet,
+    path: TreePath,
+    side: FileSide,
+    start: u32,
+    end: u32,
+}
+
+async fn query_file_lines(
+    State(state): State<AppState>,
+    Json(req): Json<QueryFileLines>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let (tx, rx) = channel();
+    state.worker_tx.send(SessionEvent::QueryFileLines {
+        tx,
+        set: req.set,
+        path: req.path,
+        side: req.side,
+        start: req.start,
+        end: req.end,
+    })?;
     let result = rx.recv()??;
     Ok(Json(result))
 }

@@ -63,5 +63,6 @@ export const sidebarCollapsed = persisted<boolean>("jjuicy.sidebarCollapsed", fa
 // consumed by the bookmark section (phase 4); the log column header owns the toggle
 export const bookmarksExpanded = persisted<boolean>("jjuicy.bookmarksExpanded", false);
 export const filesView = persisted<"list" | "tree">("jjuicy.filesView", "list");
+export const diffMode = persisted<"unified" | "split">("jjuicy.diffMode", "unified");
 // shared by the files column and the detail pane; each resolves it against its own revs
 export const selectedFile = writable<FileSelection | null>(null);

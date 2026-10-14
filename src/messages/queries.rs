@@ -3,22 +3,26 @@
 
 use super::*;
 
-/// A file-level change within a revision's diff.
+/// A file-level change within a revision's diff. Hunks are fetched separately
+/// with `query_file_diff`.
 #[derive(Serialize, Deserialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
-pub struct RevChange {
+pub struct RevChangeSummary {
     pub kind: ChangeKind,
     pub path: TreePath,
+    /// Source path when the file was renamed or copied.
+    pub old_path: Option<TreePath>,
     pub has_conflict: bool,
-    pub hunks: Vec<ChangeHunk>,
+    pub added: u32,
+    pub removed: u32,
+    pub binary: bool,
 }
 
-/// A file-level conflict in a revision's parent tree.
+/// A file that is conflicted in the final tree but unchanged by the revisions.
 #[derive(Serialize, Deserialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
 pub struct RevConflict {
     pub path: TreePath,
-    pub hunks: Vec<ChangeHunk>,
 }
 
 /// The type of modification made to a file in a diff.
@@ -48,10 +52,105 @@ pub enum RevsResult {
         /// Parents of the oldest revision in the set.
         parents: Vec<RevHeader>,
         /// Combined changes: diff from oldest parent to newest revision.
-        changes: Vec<RevChange>,
+        changes: Vec<RevChangeSummary>,
         /// Conflicts present in the parent tree of the oldest revision.
         conflicts: Vec<RevConflict>,
     },
+}
+
+/// Full diff of one file across a revision set.
+#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct FileDiff {
+    pub path: TreePath,
+    pub old_path: Option<TreePath>,
+    pub kind: FileDiffKind,
+    pub hunks: Vec<FileDiffHunk>,
+    /// Side/base blocks when `kind` is `Conflict`.
+    pub conflict: Option<ConflictBlocks>,
+    pub old_line_count: u32,
+    pub new_line_count: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(tag = "type")]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub enum FileDiffKind {
+    Text,
+    Binary { old_size: u32, new_size: u32 },
+    TooLarge { old_size: u32, new_size: u32 },
+    Conflict,
+}
+
+/// A diff hunk: `header` is the drag payload for hunk mutations, `rows` are for display.
+#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct FileDiffHunk {
+    pub header: ChangeHunk,
+    pub rows: Vec<DiffRow>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct DiffRow {
+    pub kind: DiffRowKind,
+    pub old_line: Option<u32>,
+    pub new_line: Option<u32>,
+    pub text: String,
+    /// Changed ranges within `text`, for word highlighting.
+    pub tokens: Vec<DiffToken>,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub enum DiffRowKind {
+    Context,
+    Added,
+    Removed,
+    /// Conflict marker line; corresponds to no line on either side.
+    Marker,
+}
+
+/// Half-open range in UTF-16 code units, matching JS string indexing.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct DiffToken {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct ConflictBlocks {
+    pub regions: Vec<ConflictRegion>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub enum ConflictRegion {
+    Resolved {
+        lines: Vec<String>,
+    },
+    Conflict {
+        sides: Vec<ConflictSide>,
+        bases: Vec<ConflictSide>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct ConflictSide {
+    pub label: String,
+    pub lines: Vec<String>,
+}
+
+/// Which side of a diff to read from.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub enum FileSide {
+    Old,
+    New,
 }
 
 /// (column, row) position of a node in the log graph.

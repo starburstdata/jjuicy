@@ -119,6 +119,7 @@ Settings loaded via `jj config`. Key jjuicy-specific settings in `src/config/jju
 - `jjuicy.default-mode` - "gui" or "web"
 - `jjuicy.queries.log-page-size` - paging size (default 1000)
 - `jjuicy.queries.large-repo-heuristic` - disables features when repo too large (default 100k)
+- `jjuicy.queries.max-diff-bytes` - files larger than this show a placeholder instead of a diff (default 2MiB)
 - `jjuicy.ui.log-density` - "comfortable" (cards) or "compact" (one line per row)
 - `jjuicy.ui.avatars` - "initials", "gravatar" or "none"
 
@@ -158,6 +159,7 @@ Use `let` instead of `const` for variable declarations.
 - `doc/DESIGN.md` - Core metaphors, layout, bookmark state machine
 - `app/Shell.svelte` - Window layout: header, SplitView panes, status bar (`app/shell/`)
 - `app/detail/DetailPane.svelte` - Revision detail: header, actions, parents, changes (`app/detail/`)
+- `app/diff/DiffViewer.svelte` - Per-file diff: unified/split rows, context expansion, conflicts, highlighting (`app/diff/`)
 - `app/mutators/BinaryMutator.ts` - All drag-drop policies
 - `app/mutators/enablement.ts` - Revision action enablement; must match `src/gui/menu.rs`
 - `app/ipc.ts` - IPC abstraction with runtime detection

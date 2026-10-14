@@ -35,6 +35,7 @@ pub trait JjuicySettings {
     fn query_log_page_size(&self) -> usize;
     fn query_large_repo_heuristic(&self) -> i64;
     fn query_auto_snapshot(&self) -> Option<bool>;
+    fn query_max_diff_bytes(&self) -> usize;
     fn ui_theme_override(&self) -> Option<String>;
     fn ui_theme_file(&self) -> Option<String>;
     fn ui_mark_unpushed_bookmarks(&self) -> bool;
@@ -60,6 +61,11 @@ impl JjuicySettings for UserSettings {
 
     fn query_auto_snapshot(&self) -> Option<bool> {
         self.get_bool("jjuicy.queries.auto-snapshot").ok()
+    }
+
+    fn query_max_diff_bytes(&self) -> usize {
+        self.get_int("jjuicy.queries.max-diff-bytes")
+            .unwrap_or(2097152) as usize
     }
 
     fn ui_theme_override(&self) -> Option<String> {

@@ -68,13 +68,16 @@
         onClose();
     }
 
-    function isChangeEnabled(headers: RevHeader[], ignoreImmutable: boolean = false) {
+    // must match the tree_menu enablement in src/gui/menu.rs
+    function isChangeEnabled(headers: RevHeader[], hasHunk: boolean, ignoreImmutable: boolean = false) {
         const anyImmutable = !ignoreImmutable && headers.some((h) => h.is_immutable);
         const hasSingleParent = headers[headers.length - 1]?.parent_ids.length == 1;
 
         return {
             squash: !anyImmutable && hasSingleParent,
             restore: !anyImmutable && hasSingleParent,
+            move_to_working_copy:
+                !anyImmutable && hasHunk && headers.length == 1 && !headers[0].is_working_copy && hasSingleParent,
         };
     }
 
@@ -101,7 +104,7 @@
         operand.type === "Revision" || operand.type === "Revisions"
             ? revisionEnablement(getRevisionHeaders(), $ignoreToggled)
             : null;
-    $: changeEnabled = operand.type === "Change" ? isChangeEnabled(operand.headers, $ignoreToggled) : null;
+    $: changeEnabled = operand.type === "Change" ? isChangeEnabled(operand.headers, operand.hunk != null, $ignoreToggled) : null;
     $: refEnabled = operand.type === "Ref" ? isRefEnabled(operand.ref) : null;
 
     // clamp to viewport
@@ -149,6 +152,11 @@
     {:else if operand.type === "Change" && changeEnabled}
         <button disabled={!changeEnabled.squash} on:click={() => onClick("squash")}>Squash into parent</button>
         <button disabled={!changeEnabled.restore} on:click={() => onClick("restore")}>Restore from parent</button>
+        {#if operand.hunk}
+            <button
+                disabled={!changeEnabled.move_to_working_copy}
+                on:click={() => onClick("move_to_working_copy")}>Move to working copy</button>
+        {/if}
     {:else if operand.type === "Ref" && refEnabled}
         <button disabled={!refEnabled.track} on:click={() => onClick("track")}>Track</button>
         <button disabled={!refEnabled.untrack} on:click={() => onClick("untrack")}>Untrack</button>

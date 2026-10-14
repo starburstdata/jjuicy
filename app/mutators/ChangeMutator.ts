@@ -7,6 +7,8 @@ import type { MoveChanges } from "../messages/MoveChanges";
 import type { MoveHunk } from "../messages/MoveHunk";
 import type { TreePath } from "../messages/TreePath";
 import { mutate } from "../ipc";
+import { repoStatusEvent } from "../stores";
+import { get } from "svelte/store";
 
 export type MutationOptions = { ignoreImmutable?: boolean };
 
@@ -43,6 +45,9 @@ export default class ChangeMutator {
             case "restore":
                 this.onRestore();
                 break;
+            case "move_to_working_copy":
+                this.onMoveToWorkingCopy();
+                break;
             default:
                 console.log(`unimplemented mutation '${event}'`, this);
         }
@@ -67,6 +72,19 @@ export default class ChangeMutator {
                 paths: [this.#path]
             }, { ignoreImmutable: this.#ignoreImmutable });
         }
+    };
+
+    onMoveToWorkingCopy = () => {
+        let workingCopy = get(repoStatusEvent)?.working_copy;
+        if (!this.#hunk || !this.#singleton || !workingCopy) {
+            return;
+        }
+        mutate<MoveHunk>("move_hunk", {
+            from_id: this.#singleton.id,
+            to_id: workingCopy,
+            path: this.#path,
+            hunk: this.#hunk
+        }, { ignoreImmutable: this.#ignoreImmutable });
     };
 
     onRestore = () => {

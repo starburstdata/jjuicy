@@ -304,6 +304,13 @@ pub fn build_context(
                 true,
                 None::<&str>,
             )?,
+            &MenuItem::with_id(
+                app_handle,
+                "tree_move_to_working_copy",
+                "Move to working copy",
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 
@@ -500,7 +507,7 @@ pub fn handle_context(window: Window, ctx: Operand, ignore_immutable: bool) -> R
 
             window.popup_menu(context_menu)?;
         }
-        Operand::Change { headers, .. } => {
+        Operand::Change { headers, hunk, .. } => {
             let context_menu = &guard
                 .get(window.label())
                 .expect("session not found")
@@ -521,6 +528,13 @@ pub fn handle_context(window: Window, ctx: Operand, ignore_immutable: bool) -> R
                     && headers
                         .last()
                         .is_some_and(|header| header.parent_ids.len() == 1),
+            )?;
+            // whole-file moves span revision ranges; only single hunks have a clear target
+            context_menu.enable(
+                "tree_move_to_working_copy",
+                !any_immutable
+                    && hunk.is_some()
+                    && matches!(headers.as_slice(), [header] if !header.is_working_copy && header.parent_ids.len() == 1),
             )?;
 
             window.popup_menu(context_menu)?;
@@ -661,6 +675,9 @@ pub fn handle_event(window: &Window, event: MenuEvent) -> Result<()> {
         }
         "tree_squash" => window.emit_to(target, "jjuicy://context/tree", "squash")?,
         "tree_restore" => window.emit_to(target, "jjuicy://context/tree", "restore")?,
+        "tree_move_to_working_copy" => {
+            window.emit_to(target, "jjuicy://context/tree", "move_to_working_copy")?
+        }
         "bookmark_track" => window.emit_to(target, "jjuicy://context/bookmark", "track")?,
         "bookmark_untrack" => window.emit_to(target, "jjuicy://context/bookmark", "untrack")?,
         "bookmark_push_all" => window.emit_to(target, "jjuicy://context/bookmark", "push-all")?,

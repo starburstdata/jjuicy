@@ -129,3 +129,65 @@ describe("ContextMenu (revert)", () => {
         expect(revertButton!.disabled).toBe(false);
     });
 });
+
+describe("ContextMenu (hunk)", () => {
+    let mutationCalls: { cmd: string; args: any }[];
+    let hunk = {
+        location: { from_file: { start: 1, len: 1 }, to_file: { start: 1, len: 1 } },
+        lines: { lines: ["-a", "+b"] },
+    };
+    let path = { repo_path: "a.txt", relative_path: "a.txt" };
+
+    beforeEach(() => {
+        mutationCalls = [];
+        setupMocks((cmd, args) => {
+            if (cmd === "move_hunk") {
+                mutationCalls.push({ cmd, args });
+                return { type: "Updated", new_status: { operation_description: "move", working_copy: mockHeader.parent_ids[0] }, new_selection: null };
+            }
+            return undefined;
+        });
+    });
+
+    afterEach(async () => {
+        await cleanupMocks();
+    });
+
+    function find(container: HTMLElement, label: string) {
+        return Array.from(container.querySelectorAll("button")).find((b) => b.textContent === label) as HTMLButtonElement | undefined;
+    }
+
+    it("moves a hunk into the working copy", async () => {
+        const { default: ContextMenu } = await import("./ContextMenu.svelte");
+        const { repoStatusEvent } = await import("../stores");
+        let wc = { type: "CommitId" as const, hex: "wc0000", prefix: "wc0", rest: "000" };
+        repoStatusEvent.set({ operation_description: "", working_copy: wc } as any);
+
+        let operand: Operand = { type: "Change", headers: [mockHeader], path, hunk };
+        const { container } = render(ContextMenu, { props: { operand, x: 0, y: 0, onClose: () => {} } });
+
+        let button = find(container, "Move to working copy");
+        expect(button?.disabled).toBe(false);
+        button!.click();
+
+        await vi.waitFor(() => expect(mutationCalls).toHaveLength(1));
+        let mutation = mutationCalls[0].args.mutation;
+        expect(mutation.from_id).toEqual(mockHeader.id);
+        expect(mutation.to_id).toEqual(wc);
+        expect(mutation.hunk).toEqual(hunk);
+    });
+
+    it("can't move a working copy hunk to itself", async () => {
+        const { default: ContextMenu } = await import("./ContextMenu.svelte");
+        let operand: Operand = { type: "Change", headers: [{ ...mockHeader, is_working_copy: true }], path, hunk };
+        const { container } = render(ContextMenu, { props: { operand, x: 0, y: 0, onClose: () => {} } });
+        expect(find(container, "Move to working copy")?.disabled).toBe(true);
+    });
+
+    it("only offers the move for hunks", async () => {
+        const { default: ContextMenu } = await import("./ContextMenu.svelte");
+        let operand: Operand = { type: "Change", headers: [mockHeader], path, hunk: null };
+        const { container } = render(ContextMenu, { props: { operand, x: 0, y: 0, onClose: () => {} } });
+        expect(find(container, "Move to working copy")).toBeUndefined();
+    });
+});

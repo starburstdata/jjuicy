@@ -75,6 +75,22 @@ pub enum SessionEvent {
         tx: Sender<Result<messages::queries::RevsResult>>,
         set: messages::RevSet,
     },
+    /// Full diff of one file across a revision set.
+    QueryFileDiff {
+        tx: Sender<Result<messages::queries::FileDiff>>,
+        set: messages::RevSet,
+        path: messages::TreePath,
+        context: u32,
+    },
+    /// A line range of one file, on either side of a revision set's diff.
+    QueryFileLines {
+        tx: Sender<Result<Vec<String>>>,
+        set: messages::RevSet,
+        path: messages::TreePath,
+        side: messages::queries::FileSide,
+        start: u32,
+        end: u32,
+    },
     /// List Git remotes, optionally filtered to those tracking a bookmark.
     QueryRemotes {
         tx: Sender<Result<Vec<String>>>,
@@ -285,6 +301,22 @@ impl Session for WorkspaceSession<'_> {
                 }
                 SessionEvent::QueryRevisions { tx, set } => {
                     tx.send(queries::query_revisions(&self, set).await)?
+                }
+                SessionEvent::QueryFileDiff {
+                    tx,
+                    set,
+                    path,
+                    context,
+                } => tx.send(queries::query_file_diff(&self, set, path, context).await)?,
+                SessionEvent::QueryFileLines {
+                    tx,
+                    set,
+                    path,
+                    side,
+                    start,
+                    end,
+                } => {
+                    tx.send(queries::query_file_lines(&self, set, path, side, start, end).await)?
                 }
                 SessionEvent::QueryRemotes {
                     tx,
@@ -523,6 +555,22 @@ impl Session for QuerySession<'_, '_> {
             match evt {
                 Ok(SessionEvent::QueryRevisions { tx, set }) => {
                     tx.send(queries::query_revisions(self.ws, set).await)?
+                }
+                Ok(SessionEvent::QueryFileDiff {
+                    tx,
+                    set,
+                    path,
+                    context,
+                }) => tx.send(queries::query_file_diff(self.ws, set, path, context).await)?,
+                Ok(SessionEvent::QueryFileLines {
+                    tx,
+                    set,
+                    path,
+                    side,
+                    start,
+                    end,
+                }) => {
+                    tx.send(queries::query_file_lines(self.ws, set, path, side, start, end).await)?
                 }
                 Ok(SessionEvent::QueryRemotes {
                     tx,
