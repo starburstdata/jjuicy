@@ -1,8 +1,10 @@
 <script lang="ts">
     import type { DiffRow } from "../messages/DiffRow";
+    import type { SyntaxSpan } from "./highlight";
     import DiffCode from "./DiffCode.svelte";
 
     export let row: DiffRow;
+    export let syntax: SyntaxSpan[] | undefined = undefined;
 
     $: cls = row.kind == "Added" ? "add" : row.kind == "Removed" ? "remove" : row.kind == "Marker" ? "marker" : "context";
     $: prefix = row.kind == "Added" ? "+" : row.kind == "Removed" ? "−" : " ";
@@ -12,7 +14,7 @@
     <span class="gutter">{row.old_line ?? ""}</span>
     <span class="gutter">{row.new_line ?? ""}</span>
     <span class="prefix">{row.kind == "Marker" ? "" : prefix}</span>
-    <DiffCode text={row.text} tokens={row.tokens} />
+    <DiffCode text={row.text} tokens={row.tokens} {syntax} />
 </div>
 
 <style>

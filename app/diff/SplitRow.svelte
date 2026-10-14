@@ -1,8 +1,11 @@
 <script lang="ts">
     import type { RowPair } from "./pairing";
+    import type { DiffRow } from "../messages/DiffRow";
+    import type { SyntaxSpan } from "./highlight";
     import DiffCode from "./DiffCode.svelte";
 
     export let pair: RowPair;
+    export let syntax: Map<DiffRow, SyntaxSpan[]> | null = null;
 
     $: marker = pair.left?.kind == "Marker";
     $: context = pair.left != null && pair.left === pair.right;
@@ -19,11 +22,11 @@
     <div class="row">
         <div class="side {leftClass}">
             <span class="gutter">{pair.left?.old_line ?? ""}</span>
-            {#if pair.left}<DiffCode text={pair.left.text} tokens={context ? [] : pair.left.tokens} />{/if}
+            {#if pair.left}<DiffCode text={pair.left.text} tokens={context ? [] : pair.left.tokens} syntax={syntax?.get(pair.left)} />{/if}
         </div>
         <div class="side {rightClass}">
             <span class="gutter">{pair.right?.new_line ?? ""}</span>
-            {#if pair.right}<DiffCode text={pair.right.text} tokens={context ? [] : pair.right.tokens} />{/if}
+            {#if pair.right}<DiffCode text={pair.right.text} tokens={context ? [] : pair.right.tokens} syntax={syntax?.get(pair.right)} />{/if}
         </div>
     </div>
 {/if}

@@ -37,7 +37,8 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
 - The detail pane ends in the diff viewer (`app/diff/DiffViewer.svelte`), which fetches one
   file at a time with `query_file_diff`; revision queries only carry per-file summaries. Hunk
   headers are `HunkObject`s, so hunks drag onto revisions like files do. "All files" stacks a
-  viewer per file and loads each as it scrolls into view.
+  viewer per file and loads each as it scrolls into view. Highlighting (Lezer) runs over each
+  hunk's whole old/new text and is sliced per line, so multi-line tokens colour correctly.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
   `chip*` theme tokens. Selection is a tint and a left bar rather than a fill, so chip and id
   colours stay legible on the selected row.
