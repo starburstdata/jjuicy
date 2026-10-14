@@ -18,8 +18,9 @@ cargo run -- web               # Launch in web mode (opens browser)
 ```
 
 e2e tests (`e2e/`) run against `ju web`. `JU_BIN=target/release/ju` skips `cargo run` (and
-gives realistic timings, but embeds the `dist/` from its last build). Opt-in suite:
-`JU_PERF=1` (`perf-budgets.test.ts`) logs selection timings.
+gives realistic timings, but embeds the `dist/` from its last build). Opt-in suites:
+`JU_PERF=1` (`perf-budgets.test.ts`) logs selection timings; `JU_SHOTS=<dir>`
+(`theme-screenshots.test.ts`) captures every theme in light and dark.
 
 **Before committing:** Run `cargo clippy` and `cargo fmt` to ensure code quality and consistent formatting.
 
