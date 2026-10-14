@@ -246,6 +246,8 @@ Goal: the new chrome around the *existing* log and revision panes. No behavioura
 | File selection → diff paint < 150ms | 2k-line Rust file, highlighted | 70–82ms |
 | Log scroll 60fps at 10k rows | — | Not measurable headlessly; tracked in `doc/TODO.md` |
 
+All 4 themes × light/dark were checked via `e2e/theme-screenshots.test.ts`. That check moved the diff gutter off `colors.gutter`, a graph line colour, onto `surfaceDeep`.
+
 ## Phase 4 – Bookmark section & op log (B-*, O-*)
 
 ### 4.1 Bookmark section (B-1 to B-3)

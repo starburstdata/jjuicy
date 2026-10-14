@@ -31,7 +31,7 @@
         padding-right: 6px;
         text-align: right;
         color: var(--ju-colors-foregroundMuted);
-        background: var(--ju-colors-gutter);
+        background: var(--ju-colors-surfaceDeep);
         user-select: none;
     }
 
