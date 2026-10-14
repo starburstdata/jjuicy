@@ -112,10 +112,35 @@
     $: digits = String(Math.max(diff?.old_line_count ?? 0, diff?.new_line_count ?? 0, 1)).length;
     $: columns = maxColumns(items);
     $: blameWidth = blame ? BLAME_WIDTH : "0px";
-    $: minWidth =
+    // gutters stay put and only code scrolls; the range is how far the longest line overflows
+    // the narrowest code column (split's right side, which also carries the blame)
+    $: gutter = `(${digits}ch + 12px)`;
+    $: codeWidth =
         $diffMode == "unified"
-            ? `calc(${blameWidth} + 2 * (${digits}ch + 6px) + ${columns + 3}ch)`
-            : `calc(${blameWidth} + 2 * (${digits}ch + 6px + ${columns + 2}ch))`;
+            ? `(100% - ${blameWidth} - 2 * ${gutter} - 2ch)`
+            : `((100% - 1px) / 2 - ${blameWidth} - ${gutter} - 1ch)`;
+    $: scrollWidth = `calc(100% + max(0px, ${columns + 1}ch - ${codeWidth}))`;
+
+    let bar: HTMLElement | null = null;
+    let scrollX = 0;
+    let overflowing = false;
+
+    function measureBar() {
+        overflowing = !!bar && bar.scrollWidth > bar.clientWidth;
+        scrollX = bar?.scrollLeft ?? 0;
+    }
+    $: if (bar) {
+        scrollWidth;
+        tick().then(measureBar);
+    }
+
+    function onWheel(event: WheelEvent) {
+        if (!bar || !overflowing) return;
+        let dx = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+        if (Math.abs(dx) <= Math.abs(event.shiftKey ? 0 : event.deltaY)) return;
+        event.preventDefault();
+        bar.scrollLeft += dx;
+    }
 
     async function onExpand(index: number, all: boolean) {
         let gap = gaps[index];
@@ -149,6 +174,7 @@
     let first = 0;
     let last = 0;
     let observer: ResizeObserver | null = null;
+    let resize: ResizeObserver | null = null;
     let intersection: IntersectionObserver | null = null;
 
     $: virtual = items.length > VIRTUALIZE_ABOVE;
@@ -202,11 +228,16 @@
             observer.observe(scroller);
         }
         updateWindow();
+        host.addEventListener("wheel", onWheel, { passive: false });
+        resize = new ResizeObserver(measureBar);
+        resize.observe(host);
     });
 
     onDestroy(() => {
         (scroller ?? window).removeEventListener("scroll", updateWindow);
+        host?.removeEventListener("wheel", onWheel);
         observer?.disconnect();
+        resize?.disconnect();
         intersection?.disconnect();
     });
 
@@ -245,10 +276,10 @@
     {:else if diff.hunks.length == 0}
         <div class="placeholder">No content changes</div>
     {:else}
-        <div class="scroll">
+        <div class="text">
             <div
                 class="diff {$diffMode}"
-                style="--row-height: {ITEM_HEIGHT}px; --separator-height: {ITEM_HEIGHT}px; --gutter-width: calc({digits}ch + 6px); --blame-width: {BLAME_WIDTH}; min-width: {minWidth}; height: {items.length *
+                style="--row-height: {ITEM_HEIGHT}px; --separator-height: {ITEM_HEIGHT}px; --gutter-width: calc({digits}ch + 6px); --blame-width: {BLAME_WIDTH}; --scroll-x: {scrollX}px; height: {items.length *
                     ITEM_HEIGHT}px">
                 <div class="window" style="transform: translateY({first * ITEM_HEIGHT}px)">
                     {#each visible as item, i (i)}
@@ -273,6 +304,14 @@
                     {/each}
                 </div>
             </div>
+            <div
+                class="hscroll"
+                class:overflowing
+                bind:this={bar}
+                on:scroll={measureBar}
+                aria-hidden="true">
+                <div style="width: {scrollWidth}"></div>
+            </div>
         </div>
     {/if}
 </div>
@@ -283,8 +322,51 @@
         overflow-y: hidden;
     }
 
+    /* global.css makes divs pointer-transparent; the viewer opts in to receive wheel events */
+    .viewer {
+        pointer-events: auto;
+    }
+
+    /* sticks to the bottom of the detail pane while the diff is on screen, overlaying the last row */
+    .hscroll {
+        position: sticky;
+        bottom: 0;
+        height: 10px;
+        margin-top: -10px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        font-family: var(--ju-text-familyCode);
+        font-size: var(--ju-text-sizeMd);
+        pointer-events: none;
+        visibility: hidden;
+    }
+
+    .hscroll.overflowing {
+        pointer-events: auto;
+        visibility: visible;
+    }
+
+    .hscroll > div {
+        height: 1px;
+    }
+
+    /* styled so webkit draws a classic bar instead of an overlay that only shows on hover */
+    .hscroll::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .hscroll::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--ju-colors-foregroundMuted) 50%, transparent);
+        border-radius: 4px;
+    }
+
+    .hscroll::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
     .diff {
         position: relative;
+        overflow: hidden;
         background: var(--ju-colors-background);
         font-family: var(--ju-text-familyCode);
         font-size: var(--ju-text-sizeMd);
