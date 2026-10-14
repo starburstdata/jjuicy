@@ -29,8 +29,8 @@ mark-unpushed-bookmarks = true
 # "light" or "dark". If empty, your OS settings will be used.
 theme-override = ""
 
-# Path to a custom theme TOML file. If empty, the bundled default theme
-# is used.
+# Path to a custom theme TOML file. If empty, the bundled macOS theme
+# is used; tokens the file omits are taken from it too.
 # The theme file contains [light.*] and [dark.*]
 # sections with colors, text, shadows, and components tokens.
 theme-file = ""

@@ -21,6 +21,8 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
 - The header (`app/shell/Header.svelte`) holds repo-level actions: sidebar and file list toggles, refresh,
   fetch/push, the repo/workspace breadcrumb, terminal and settings. It doubles as the window's
   drag region, so interactive children must opt back in to pointer events.
+- Themes live in `res/themes/`; `macos.toml` is the default, and other theme files inherit any
+  token they omit from it.
 - The body is built from `SplitView` panes (`app/shell/SplitView.svelte`), whose sizes persist.
 - The status bar (`app/shell/StatusBar.svelte`) shows the latest operation with undo, and
   counters from `RepoStatus.summary`. Clicking a counter filters the log through

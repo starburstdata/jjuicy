@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { PROJECT_ROOT, createContext, destroyContext, extractTestRepo, startGG } from "./harness.js";
 
-const THEMES = ["default", "macos", "material", "fluent"];
+const THEMES = ["macos", "material", "fluent"];
 
 describe.runIf(process.env.JU_SHOTS)("theme screenshots", () => {
     for (let theme of THEMES) {
