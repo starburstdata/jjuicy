@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::messages::{
     RepoConfig, RepoStatus, RevSet, TreePath,
-    queries::{FileDiff, FileSide, LogPage, RevsResult},
+    queries::{BookmarkEntry, FileDiff, FileSide, LogPage, RevsResult},
 };
 use crate::worker::SessionEvent;
 
@@ -24,6 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/query_file_diff", post(query_file_diff))
         .route("/query_file_lines", post(query_file_lines))
         .route("/query_remotes", post(query_remotes))
+        .route("/query_bookmarks", post(query_bookmarks))
         .route("/query_recent_workspaces", post(query_recent_workspaces))
         .route("/query_snapshot", post(query_snapshot))
 }
@@ -167,6 +168,15 @@ async fn query_remotes(
         tx,
         tracking_bookmark: req.tracking_bookmark,
     })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+async fn query_bookmarks(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<BookmarkEntry>>, ApiError> {
+    let (tx, rx) = channel();
+    state.worker_tx.send(SessionEvent::QueryBookmarks { tx })?;
     let result = rx.recv()??;
     Ok(Json(result))
 }

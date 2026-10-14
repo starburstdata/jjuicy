@@ -345,6 +345,10 @@ impl WorkspaceSession<'_> {
         names
     }
 
+    pub(crate) fn is_large(&self) -> bool {
+        self.is_large
+    }
+
     pub(crate) fn sink(&self) -> Arc<dyn super::EventSink> {
         self.session.sink.clone()
     }

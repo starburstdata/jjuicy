@@ -232,6 +232,13 @@ pub struct DeleteRef {
     pub r#ref: StoreRef,
 }
 
+/// Deletes several bookmarks or tags in one operation, so cleanup is a single undo.
+#[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct DeleteRefs {
+    pub refs: Vec<StoreRef>,
+}
+
 /// Moves a bookmark or tag to a different revision.
 #[derive(Deserialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]

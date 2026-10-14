@@ -17,8 +17,8 @@ use crate::{
     messages::{
         StoreRef,
         mutations::{
-            CreateRef, DeleteRef, MoveRef, MutationOptions, MutationResult, RenameBookmark,
-            TrackBookmark, UntrackBookmark,
+            CreateRef, DeleteRef, DeleteRefs, MoveRef, MutationOptions, MutationResult,
+            RenameBookmark, TrackBookmark, UntrackBookmark,
         },
     },
     worker::{Mutation, gui_util::WorkspaceSession},
@@ -488,8 +488,8 @@ mod tests {
         messages::{
             StoreRef,
             mutations::{
-                CreateRef, DeleteRef, MoveRef, MutationResult, RenameBookmark, TrackBookmark,
-                UntrackBookmark,
+                CreateRef, DeleteRef, DeleteRefs, MoveRef, MutationResult, RenameBookmark,
+                TrackBookmark, UntrackBookmark,
             },
         },
         worker::{
@@ -667,6 +667,48 @@ mod tests {
                 .is_none()
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delete_refs_single_operation() -> Result<()> {
+        let repo = mkrepo();
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+        let op_before = ws.op_id().clone();
+
+        let result = DeleteRefs {
+            refs: vec![local_bookmark("main"), local_bookmark("pull-request")],
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+
+        assert_matches!(result, MutationResult::Updated { .. });
+        for name in ["main", "pull-request"] {
+            let matcher = StringMatcher::Exact(name.to_string());
+            assert!(
+                ws.view()
+                    .local_bookmarks_matching(&matcher)
+                    .next()
+                    .is_none()
+            );
+        }
+        // one undo restores both
+        let op = ws.repo().operation().clone();
+        assert_eq!(vec![op_before], op.parent_ids().to_vec());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delete_refs_empty_is_unchanged() -> Result<()> {
+        let repo = mkrepo();
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+
+        let result = DeleteRefs { refs: vec![] }.execute_unboxed(&mut ws).await?;
+
+        assert_matches!(result, MutationResult::Unchanged);
         Ok(())
     }
 
@@ -1015,5 +1057,69 @@ mod tests {
             super::combine_bookmarks(&["main", "dev"]),
             "bookmarks main, dev"
         );
+    }
+}
+
+#[async_trait(?Send)]
+impl Mutation for DeleteRefs {
+    async fn execute(
+        self: Box<Self>,
+        ws: &mut WorkspaceSession,
+        _options: &MutationOptions,
+    ) -> Result<MutationResult> {
+        let mut tx = ws.start_transaction().await?;
+
+        let mut labels = Vec::new();
+        for r#ref in self.refs {
+            match r#ref {
+                StoreRef::LocalBookmark { bookmark_name, .. } => {
+                    let name = RefNameBuf::from(bookmark_name);
+                    tx.repo_mut()
+                        .set_local_bookmark_target(&name, RefTarget::absent());
+                    labels.push(name.as_str().to_owned());
+                }
+                StoreRef::RemoteBookmark {
+                    bookmark_name,
+                    remote_name,
+                    ..
+                } => {
+                    let name = RefNameBuf::from(bookmark_name);
+                    let remote = RemoteNameBuf::from(remote_name);
+                    let symbol = RemoteRefSymbol {
+                        name: &name,
+                        remote: &remote,
+                    };
+                    tx.repo_mut().set_remote_bookmark(
+                        symbol,
+                        RemoteRef {
+                            target: RefTarget::absent(),
+                            state: RemoteRefState::New,
+                        },
+                    );
+                    labels.push(format!("{}@{}", name.as_str(), remote.as_str()));
+                }
+                StoreRef::Tag { tag_name } => {
+                    let name = RefNameBuf::from(tag_name);
+                    tx.repo_mut()
+                        .set_local_tag_target(&name, RefTarget::absent());
+                    labels.push(name.as_str().to_owned());
+                }
+            }
+        }
+
+        if labels.is_empty() {
+            return Ok(MutationResult::Unchanged);
+        }
+
+        match ws
+            .finish_transaction(tx, format!("forget {}", labels.join(", ")))
+            .await?
+        {
+            Some(new_status) => Ok(MutationResult::Updated {
+                new_status,
+                new_selection: None,
+            }),
+            None => Ok(MutationResult::Unchanged),
+        }
     }
 }

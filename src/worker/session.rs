@@ -96,6 +96,10 @@ pub enum SessionEvent {
         tx: Sender<Result<Vec<String>>>,
         tracking_bookmark: Option<String>,
     },
+    /// List all bookmarks with per-remote sync state.
+    QueryBookmarks {
+        tx: Sender<Result<Vec<messages::queries::BookmarkEntry>>>,
+    },
     /// Start a new log query with the given revset string.
     QueryLog {
         tx: Sender<Result<messages::queries::LogPage>>,
@@ -322,6 +326,7 @@ impl Session for WorkspaceSession<'_> {
                     tx,
                     tracking_bookmark,
                 } => tx.send(queries::query_remotes(&self, tracking_bookmark))?,
+                SessionEvent::QueryBookmarks { tx } => tx.send(queries::query_bookmarks(&self))?,
                 SessionEvent::QueryLog {
                     tx,
                     query: revset_string,
@@ -576,6 +581,9 @@ impl Session for QuerySession<'_, '_> {
                     tx,
                     tracking_bookmark,
                 }) => tx.send(queries::query_remotes(self.ws, tracking_bookmark))?,
+                Ok(SessionEvent::QueryBookmarks { tx }) => {
+                    tx.send(queries::query_bookmarks(self.ws))?
+                }
                 Ok(SessionEvent::QueryLogNextPage { tx }) => tx.send(self.get_page())?,
                 Ok(unhandled) => return Ok(QueryResult(unhandled, self.state)),
                 Err(err) => return Err(anyhow!(err)),

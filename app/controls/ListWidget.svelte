@@ -156,6 +156,10 @@
         scrollToRow(index);
     }
 
+    export function revealRow(index: number) {
+        scrollToRow(index);
+    }
+
     function scrollToRow(index: number) {
         let y = index * rowHeight;
         if (box.scrollTop + box.clientHeight < y + rowHeight) {

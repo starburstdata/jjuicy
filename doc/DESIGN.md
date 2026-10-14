@@ -26,6 +26,10 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   counters from `RepoStatus.summary`. Clicking a counter filters the log through
   `logQueryRequest`. The backend caps counts and skips the summary on large repos, so the
   counters are cheap to keep current.
+- The log column's bookmark section (`app/log/BookmarkSection.svelte`) groups local, tracked
+  and untracked remote bookmarks with ahead/behind badges. Selecting one reveals its target,
+  widening the revset when it isn't loaded. Cleanup (merged, absent) is one `DeleteRefs`
+  mutation, so it undoes in one step.
 - Log rows have a fixed height per `jjuicy.ui.log-density` (`app/log/density.ts`): compact
   rows are one line, comfortable rows are cards with id/refs, a two-line description and an
   author line. Virtualisation and graph geometry both read that height, so a row's content

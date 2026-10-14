@@ -19,6 +19,9 @@ describe("LogPane", () => {
                 let emptyPage: LogPage = { rows: [], has_more: false };
                 return emptyPage;
             }
+            if (cmd === "query_bookmarks") {
+                return [];
+            }
             return undefined;
         });
     });

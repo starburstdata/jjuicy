@@ -24,6 +24,15 @@ export const currentSource = writable<Operand | null>();
 export const currentTarget = writable<Operand | null>();
 export const currentInput = writable<InputRequest & { callback: (response: InputResponse | null) => void } | null>();
 
+// rendered by the shell, since panes go inert while a modal is up
+export const currentConfirmation = writable<{
+    title: string;
+    detail: string;
+    items: string[];
+    action: string;
+    callback: (confirmed: boolean) => void;
+} | null>(null);
+
 export const hasModal = writable<boolean>(false);
 export const hasMenu = writable<{ x: number; y: number } | null>(null);
 export const lastFocus = writable<number>(Date.now());
@@ -60,7 +69,7 @@ export function persisted<T>(key: string, initial: T) {
 }
 
 export const sidebarCollapsed = persisted<boolean>("jjuicy.sidebarCollapsed", false);
-// consumed by the bookmark section (phase 4); the log column header owns the toggle
+// the log column header owns the toggle
 export const bookmarksExpanded = persisted<boolean>("jjuicy.bookmarksExpanded", false);
 export const filesView = persisted<"list" | "tree">("jjuicy.filesView", "list");
 export const diffMode = persisted<"unified" | "split">("jjuicy.diffMode", "unified");

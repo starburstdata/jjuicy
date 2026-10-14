@@ -209,3 +209,31 @@ pub struct LogPage {
     pub rows: Vec<LogRow>,
     pub has_more: bool,
 }
+
+/// A bookmark with its local target and the state of each remote copy.
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct BookmarkEntry {
+    pub name: String,
+    /// None when there is no local bookmark (deleted, or never fetched as tracked).
+    pub target: Option<RevHeader>,
+    pub has_conflict: bool,
+    /// The local target is a strict ancestor of `trunk()`.
+    pub is_merged: bool,
+    pub remotes: Vec<RemoteBookmarkState>,
+}
+
+/// One remote's copy of a bookmark, relative to the local bookmark.
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct RemoteBookmarkState {
+    pub remote: String,
+    pub target: Option<RevHeader>,
+    pub tracked: bool,
+    /// Tracked, but the local bookmark has been deleted; the next push deletes it.
+    pub absent: bool,
+    /// Commits on the local target not on the remote, capped at `BOOKMARK_COUNT_CAP`.
+    /// None when there is nothing to compare, or the repo is too large to count.
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+}

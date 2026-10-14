@@ -31,9 +31,9 @@ use jjuicy_lib::messages::{
     mutations::{
         AbandonRevisions, AdoptRevision, BackoutRevisions, CheckoutRevision, CloneRepository,
         CopyChanges, CopyHunk, CreateRef, CreateRevision, CreateRevisionBetween, DeleteRef,
-        DescribeRevision, DuplicateRevisions, ExternalDiff, ExternalResolve, ForgetWorkspace,
-        GitFetch, GitPush, InitRepository, InsertRevisions, MoveChanges, MoveHunk, MoveRef,
-        MoveRevisions, MutationOptions, MutationResult, RenameBookmark, RenameWorkspace,
+        DeleteRefs, DescribeRevision, DuplicateRevisions, ExternalDiff, ExternalResolve,
+        ForgetWorkspace, GitFetch, GitPush, InitRepository, InsertRevisions, MoveChanges, MoveHunk,
+        MoveRef, MoveRevisions, MutationOptions, MutationResult, RenameBookmark, RenameWorkspace,
         ResolveConflictSide, TrackBookmark, UndoOperation, UntrackBookmark,
     },
 };
@@ -198,6 +198,7 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             query_file_diff,
             query_file_lines,
             query_remotes,
+            query_bookmarks,
             query_snapshot,
             open_terminal,
             open_user_config,
@@ -220,6 +221,7 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             rename_bookmark,
             create_ref,
             delete_ref,
+            delete_refs,
             move_ref,
             git_push,
             git_fetch,
@@ -606,6 +608,23 @@ fn query_remotes(
 }
 
 #[tauri::command(async)]
+fn query_bookmarks(
+    window: Window,
+    app_state: State<AppState>,
+) -> Result<Vec<messages::queries::BookmarkEntry>, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::QueryBookmarks { tx: call_tx })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
 fn query_snapshot(
     window: Window,
     app_state: State<AppState>,
@@ -814,6 +833,16 @@ fn delete_ref(
     window: Window,
     app_state: State<AppState>,
     mutation: DeleteRef,
+    options: MutationOptions,
+) -> Result<MutationResult, InvokeError> {
+    try_mutate(window, app_state, mutation, options)
+}
+
+#[tauri::command(async)]
+fn delete_refs(
+    window: Window,
+    app_state: State<AppState>,
+    mutation: DeleteRefs,
     options: MutationOptions,
 ) -> Result<MutationResult, InvokeError> {
     try_mutate(window, app_state, mutation, options)
