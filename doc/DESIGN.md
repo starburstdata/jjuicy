@@ -30,6 +30,10 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   rows are one line, comfortable rows are cards with id/refs, a two-line description and an
   author line. Virtualisation and graph geometry both read that height, so a row's content
   must never change its height.
+- The main body is Log | Files | Detail. The files column (`app/files/FilesPane.svelte`) and the
+  detail pane share one `selectedFile` store; each resolves it against its own revisions, so a
+  file stays selected across revisions that touch it and falls back to the first file otherwise.
+  File rows are `ChangeObject`s, so they remain drag sources for moving changes between revisions.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
   `chip*` theme tokens. Selection is a tint and a left bar rather than a fill, so chip and id
   colours stay legible on the selected row.

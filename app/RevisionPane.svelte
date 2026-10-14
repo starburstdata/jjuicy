@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { RevsResult } from "./messages/RevsResult";
-    import { ignoreToggled, changeSelectEvent, dragOverWidget } from "./stores";
-    import ChangeObject from "./objects/ChangeObject.svelte";
+    import { ignoreToggled, selectedFile, dragOverWidget } from "./stores";
+    import { mergeChanges, resolveSelection } from "./files/files";
     import HunkObject from "./objects/HunkObject.svelte";
     import RevisionObject from "./objects/RevisionObject.svelte";
     import RevisionMutator from "./mutators/RevisionMutator";
@@ -14,40 +14,10 @@
     import AuthorSpan from "./controls/AuthorSpan.svelte";
 
     import SetSpan from "./controls/SetSpan.svelte";
-    import type { RevChange } from "./messages/RevChange";
     import TimestampSpan from "./controls/TimestampSpan.svelte";
     import TimestampRangeSpan from "./controls/TimestampRangeSpan.svelte";
 
     export let revs: Extract<RevsResult, { type: "Detail" }>;
-
-    let expandedFiles = new Set<string>();
-
-    let changeIds = new Map<string, string>();
-    $: {
-        changeIds.clear();
-        for (let change of syntheticChanges) {
-            changeIds.set(`Change-${change.path.repo_path}`, change.path.repo_path);
-        }
-    }
-
-    function onChangesClick(event: MouseEvent) {
-        // walk up from the click target to find a ChangeObject button by its id
-        let el = event.target as HTMLElement | null;
-        while (el && el !== event.currentTarget) {
-            let path = el.id ? changeIds.get(el.id) : undefined;
-            if (path) {
-                if (expandedFiles.has(path)) {
-                    expandedFiles.delete(path);
-                } else {
-                    expandedFiles.add(path);
-                }
-                expandedFiles = expandedFiles;
-                return;
-            }
-            el = el.parentElement;
-        }
-    }
-
 
     // headers are in descendant-first order
     $: singleton = revs.set.from.commit.hex == revs.set.to.commit.hex;
@@ -86,27 +56,13 @@
     ).toISOString();
     $: authors = [...new Map(revs.headers.map((h) => [h.author.email, h.author])).values()];
 
-    let syntheticChanges = revs.changes
-        .concat(
-            revs.conflicts.map((conflict) => ({
-                kind: "None",
-                path: conflict.path,
-                has_conflict: true,
-                hunks: conflict.hunks,
-            })),
-        )
-        .sort((a, b) => a.path.relative_path.localeCompare(b.path.relative_path));
-
-    let unset = true;
-    let selectedChange = $changeSelectEvent;
-    for (let change of syntheticChanges) {
-        if (selectedChange?.path?.repo_path === change.path.repo_path) {
-            unset = false;
-        }
-    }
-    if (unset) {
-        changeSelectEvent.set(syntheticChanges[0]);
-    }
+    $: syntheticChanges = mergeChanges(revs.changes, revs.conflicts);
+    $: selectedPath = resolveSelection(
+        $selectedFile,
+        syntheticChanges.map((c) => c.path.repo_path),
+    );
+    $: shownChanges =
+        selectedPath == null ? syntheticChanges : syntheticChanges.filter((c) => c.path.repo_path == selectedPath);
 
     onEvent<string>("jjuicy://menu/revision", (event) => mutator.handle(event));
 
@@ -276,35 +232,24 @@
         {/if}
 
         {#if syntheticChanges.length > 0}
-            <div class="changes-header">
-                <span>Changes ({syntheticChanges.length})</span>
-            </div>
-
-            <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-            <div class="changes" on:click={onChangesClick}>
-                {#each syntheticChanges as change}
-                    <ChangeObject
-                        {change}
-                        headers={revs.headers}
-                        selected={$changeSelectEvent?.path?.repo_path === change.path.repo_path} />
-                    {#if expandedFiles.has(change.path.repo_path)}
-                        <div class="change">
-                            <div class="change-path">{change.path.relative_path}</div>
-                            {#each change.hunks as hunk}
-                                <div class="hunk">
-                                    <HunkObject
-                                        header={!change.has_conflict && singleton ? newest : null}
-                                        path={change.path}
-                                        {hunk} />
-                                </div>
-                                <pre class="diff">{#each segmentHunk(hunk.lines.lines) as segment}{#if segment.conflict}<span class="conflict-region">{#each segment.lines as line}{#if isConflictMarker(line)}<span class="conflict-marker">{line}</span>{:else}<span class={lineColour(line)}
-                                            >{line}</span
-                                        >{/if}{/each}</span>{:else}{#each segment.lines as line}<span class={lineColour(line)}
-                                            >{line}</span
-                                        >{/each}{/if}{/each}</pre>
-                            {/each}
-                        </div>
-                    {/if}
+            <div class="changes">
+                {#each shownChanges as change (change.path.repo_path)}
+                    <div class="change">
+                        <div class="change-path">{change.path.relative_path}</div>
+                        {#each change.hunks as hunk}
+                            <div class="hunk">
+                                <HunkObject
+                                    header={!change.has_conflict && singleton ? newest : null}
+                                    path={change.path}
+                                    {hunk} />
+                            </div>
+                            <pre class="diff">{#each segmentHunk(hunk.lines.lines) as segment}{#if segment.conflict}<span class="conflict-region">{#each segment.lines as line}{#if isConflictMarker(line)}<span class="conflict-marker">{line}</span>{:else}<span class={lineColour(line)}
+                                        >{line}</span
+                                    >{/if}{/each}</span>{:else}{#each segment.lines as line}<span class={lineColour(line)}
+                                        >{line}</span
+                                    >{/each}{/if}{/each}</pre>
+                        {/each}
+                    </div>
                 {/each}
             </div>
         {:else}

@@ -9,14 +9,13 @@ import { writable } from "svelte/store";
 import { event, type Query } from "./events";
 import type { InputRequest } from "./messages/InputRequest";
 import type { InputResponse } from "./messages/InputResponse";
-import type { RevChange } from "./messages/RevChange";
+import type { FileSelection } from "./files/files";
 import type { Density } from "./log/density";
 import type { AvatarMode } from "./controls/avatar";
 
 export const repoConfigEvent = await event<RepoConfig>("jjuicy://repo/config", { type: "Initial" });
 export const repoStatusEvent = await event<RepoStatus | undefined>("jjuicy://repo/status", undefined);
 export const revisionSelectEvent = await event<RevSet | undefined>("jjuicy://revision/select", undefined);
-export const changeSelectEvent = await event<RevChange | undefined>("jjuicy://change/select", undefined);
 export const progressEvent = await event<ProgressEvent | undefined>("jjuicy://progress", undefined);
 
 export const currentMutation = writable<Query<MutationResult> | null>(null);
@@ -63,3 +62,6 @@ export function persisted<T>(key: string, initial: T) {
 export const sidebarCollapsed = persisted<boolean>("jjuicy.sidebarCollapsed", false);
 // consumed by the bookmark section (phase 4); the log column header owns the toggle
 export const bookmarksExpanded = persisted<boolean>("jjuicy.bookmarksExpanded", false);
+export const filesView = persisted<"list" | "tree">("jjuicy.filesView", "list");
+// shared by the files column and the detail pane; each resolves it against its own revs
+export const selectedFile = writable<FileSelection | null>(null);
