@@ -1,45 +1,33 @@
 <script lang="ts">
-    import type { RevChange } from "../messages/RevChange";
     import type { RevHeader } from "../messages/RevHeader";
     import type { Operand } from "../messages/Operand";
     import type { ExternalDiff } from "../messages/ExternalDiff";
     import type { ExternalResolve } from "../messages/ExternalResolve";
+    import type { FileEntry } from "../files/files";
+    import { badge } from "../files/files";
     import Icon from "../controls/Icon.svelte";
     import ActionWidget from "../controls/ActionWidget.svelte";
     import Object from "./Object.svelte";
     import Zone from "./Zone.svelte";
-    import { changeSelectEvent, repoConfigEvent } from "../stores";
+    import { repoConfigEvent, selectedFile } from "../stores";
     import { mutate } from "../ipc";
     import ActionLink from "../controls/ActionLink.svelte";
 
     export let headers: RevHeader[] | null;
-    export let change: RevChange;
+    export let entry: FileEntry;
     export let selected: boolean;
+    export let showDir: boolean = true;
+    export let depth: number = 0;
 
-    let operand: Operand | null = headers ? { type: "Change", headers, path: change.path, hunk: null } : null;
+    $: change = entry.change;
+    $: operand = (headers ? { type: "Change", headers, path: change.path, hunk: null } : null) as Operand | null;
+    $: status = badge(change);
 
     $: hasDiffTool = $repoConfigEvent.type === "Workspace" && $repoConfigEvent.has_external_diff_tool;
     $: hasMergeTool = $repoConfigEvent.type === "Workspace" && $repoConfigEvent.has_external_merge_tool;
 
-    let icon = "file";
-    let state: "add" | "change" | "remove" | null = null;
-    switch (change.kind) {
-        case "Added":
-            icon = "file-plus";
-            state = "add";
-            break;
-        case "Deleted":
-            icon = "file-minus";
-            state = "remove";
-            break;
-        case "Modified":
-            icon = "file";
-            state = "change";
-            break;
-    }
-
     function onSelect() {
-        changeSelectEvent.set(change);
+        selectedFile.set({ path: change.path.repo_path });
     }
 
     function onExternalDiff() {
@@ -48,11 +36,6 @@
             id: headers[0].id,
             path: change.path,
         });
-    }
-
-    function splitPath(p: string): [string, string] {
-        let sep = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
-        return sep >= 0 ? [p.slice(0, sep), p.slice(sep)] : ["", p];
     }
 
     function onExternalResolve() {
@@ -71,15 +54,22 @@
     conflicted={change.has_conflict}
     label={change.path.relative_path}
     on:click={onSelect}
-    let:context
     let:hint>
     <Zone {operand} let:target>
-        <div class="layout" class:target>
-            <span class="chevron" class:expanded={selected}>
-                <Icon name="chevron-right" />
+        <div class="layout" class:target style="padding-left: {6 + depth * 14}px">
+            <span class="badge {status.state}">{status.symbol}</span>
+            <span class="names">
+                {#if hint}
+                    <span class="name">{hint}</span>
+                {:else}
+                    <span class="name">{entry.name}</span>
+                    {#if showDir && entry.dir}
+                        <span class="dir">{entry.dir}</span>
+                    {/if}
+                {/if}
             </span>
-            <Icon name={icon} state={context ? null : state} />
-            <span class="path-prefix">{splitPath(hint ?? change.path.relative_path)[0]}</span><span class="path-suffix">{splitPath(hint ?? change.path.relative_path)[1]}</span>
+            {#if entry.added > 0}<span class="added">+{entry.added}</span>{/if}
+            {#if entry.removed > 0}<span class="removed">−{entry.removed}</span>{/if}
             {#if hasMergeTool && change.has_conflict && operand}
                 <ActionWidget tip="resolve in merge tool" onClick={onExternalResolve}>
                     <Icon name="external-link" /> Resolve
@@ -95,41 +85,83 @@
 
 <style>
     .layout {
-        height: 30px;
+        min-height: 30px;
         display: flex;
         align-items: center;
-        gap: 3px;
-        padding-left: 3px;
-        border-bottom: 1px solid var(--ju-colors-surface);
+        gap: 6px;
+        padding: 3px 6px 3px 6px;
+        font-size: var(--ju-text-sizeSm);
     }
 
-    .path-prefix {
+    .badge {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--ju-text-familyCode);
+        font-weight: bold;
+        font-size: 11px;
+    }
+
+    .badge.add {
+        color: var(--ju-colors-added);
+        background: color-mix(in srgb, var(--ju-colors-added) 18%, transparent);
+    }
+
+    .badge.remove {
+        color: var(--ju-colors-removed);
+        background: color-mix(in srgb, var(--ju-colors-removed) 18%, transparent);
+    }
+
+    .badge.change {
+        color: var(--ju-colors-modified);
+        background: color-mix(in srgb, var(--ju-colors-modified) 18%, transparent);
+    }
+
+    .badge.conflict {
+        color: var(--ju-colors-conflict);
+        background: color-mix(in srgb, var(--ju-colors-conflict) 18%, transparent);
+    }
+
+    .names {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        line-height: 1.25;
+    }
+
+    .name {
+        font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        flex-shrink: 1;
-        min-width: 0;
     }
 
-    .path-suffix {
+    .dir {
+        color: var(--ju-colors-foregroundMuted);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
         white-space: nowrap;
-        flex-shrink: 0;
     }
 
-    .chevron {
-        display: flex;
-        align-items: center;
+    .added,
+    .removed {
         flex: none;
-        transition: transform 150ms ease;
-        color: var(--ju-colors-foregroundSubtle);
+        font-family: var(--ju-text-familyCode);
+        font-size: 11px;
     }
 
-    :global(.selected) .chevron {
-        color: var(--ju-colors-selectionForeground);
+    .added {
+        color: var(--ju-colors-added);
     }
 
-    .chevron.expanded {
-        transform: rotate(90deg);
+    .removed {
+        color: var(--ju-colors-removed);
     }
 
     .layout.target {
