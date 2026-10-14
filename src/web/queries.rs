@@ -8,7 +8,10 @@ use serde::Deserialize;
 
 use crate::messages::{
     RepoConfig, RepoStatus, RevId, RevSet, TreePath,
-    queries::{BookmarkEntry, EvologEntry, FileDiff, FileSide, LogPage, OpLogEntry, RevsResult},
+    queries::{
+        BookmarkEntry, EvologEntry, FileAnnotation, FileDiff, FileSide, LogPage, OpLogEntry,
+        RevsResult,
+    },
 };
 use crate::worker::SessionEvent;
 
@@ -27,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/query_bookmarks", post(query_bookmarks))
         .route("/query_op_log", post(query_op_log))
         .route("/query_evolog", post(query_evolog))
+        .route("/query_annotate", post(query_annotate))
         .route("/view_operation", post(view_operation))
         .route("/query_recent_workspaces", post(query_recent_workspaces))
         .route("/query_snapshot", post(query_snapshot))
@@ -217,6 +221,26 @@ async fn query_evolog(
     state
         .worker_tx
         .send(SessionEvent::QueryEvolog { tx, id: req.id })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct QueryAnnotate {
+    id: RevId,
+    path: TreePath,
+}
+
+async fn query_annotate(
+    State(state): State<AppState>,
+    Json(req): Json<QueryAnnotate>,
+) -> Result<Json<FileAnnotation>, ApiError> {
+    let (tx, rx) = channel();
+    state.worker_tx.send(SessionEvent::QueryAnnotate {
+        tx,
+        id: req.id,
+        path: req.path,
+    })?;
     let result = rx.recv()??;
     Ok(Json(result))
 }

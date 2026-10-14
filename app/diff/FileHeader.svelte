@@ -4,7 +4,7 @@
     import type { ExternalDiff } from "../messages/ExternalDiff";
     import { badge, splitPath } from "../files/files";
     import Icon from "../controls/Icon.svelte";
-    import { diffMode, repoConfigEvent } from "../stores";
+    import { annotateOn, diffMode, repoConfigEvent } from "../stores";
     import { mutate } from "../ipc";
 
     export let change: RevChangeSummary;
@@ -54,6 +54,15 @@
         <button class="tool" title="split diff" aria-pressed={$diffMode == "split"} on:click={() => diffMode.set("split")}>
             <Icon name="columns" />
         </button>
+        {#if header && change.kind != "Deleted" && !change.binary}
+            <button
+                class="tool annotate"
+                title="annotate lines with the change that introduced them"
+                aria-pressed={$annotateOn}
+                on:click={() => annotateOn.update((on) => !on)}>
+                <Icon name="user" />
+            </button>
+        {/if}
         {#if hasDiffTool && header}
             <button class="tool" title="open in diff tool" on:click={onExternalDiff}>
                 <Icon name="external-link" />

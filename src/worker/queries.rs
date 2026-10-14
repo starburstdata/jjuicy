@@ -1,6 +1,6 @@
 use std::{
     borrow::Borrow,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io::Write,
     iter::{Peekable, Skip},
     mem,
@@ -15,6 +15,7 @@ use futures_util::{StreamExt, try_join};
 use itertools::Itertools;
 use jj_cli::diff_util::{self, LineDiffOptions};
 use jj_lib::{
+    annotate::{FileAnnotator, LineOrigin},
     backend::CommitId,
     commit::Commit,
     conflict_labels::ConflictLabels,
@@ -761,6 +762,53 @@ pub fn query_evolog(ws: &WorkspaceSession, id: &RevId) -> Result<Vec<EvologEntry
             })
         })
         .collect()
+}
+
+pub fn query_annotate(
+    ws: &WorkspaceSession,
+    id: &RevId,
+    path: &TreePath,
+) -> Result<FileAnnotation> {
+    let Some(commit) = ws.resolve_optional_id(id)? else {
+        return Err(anyhow!("revision not found"));
+    };
+    let repo_path = RepoPath::from_internal_string(&path.repo_path)?;
+    let mut annotator = FileAnnotator::from_commit(&commit, repo_path)?;
+    annotator.compute(ws.repo(), &RevsetExpression::all())?;
+    let annotation = annotator.to_annotation();
+
+    // shallow clones can leave lines without an origin; jj attributes those to the root too
+    let root = LineOrigin {
+        commit_id: ws.repo().store().root_commit_id().clone(),
+        line_number: 0,
+    };
+    let mut origins = Vec::new();
+    let mut indices: HashMap<CommitId, u32> = HashMap::new();
+    let mut lines = Vec::new();
+    for (origin, _) in annotation.line_origins() {
+        let commit_id = &origin.unwrap_or(&root).commit_id;
+        let index = match indices.get(commit_id) {
+            Some(index) => *index,
+            None => {
+                let origin_commit = ws.get_commit(commit_id)?;
+                let index = origins.len() as u32;
+                origins.push(AnnotationOrigin {
+                    id: ws.format_id(&origin_commit),
+                    author: origin_commit.author().try_into()?,
+                    summary: origin_commit
+                        .description()
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned(),
+                });
+                indices.insert(commit_id.clone(), index);
+                index
+            }
+        };
+        lines.push(index);
+    }
+    Ok(FileAnnotation { origins, lines })
 }
 
 /// ahead/behind counts stop here; the ui shows "100+"

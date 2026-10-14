@@ -54,6 +54,9 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
 - Single revisions have a History tab (`app/detail/EvologView.svelte`) listing the change's
   evolog; each version diffs against its own parents, and restoring one rewrites the change's
   tree in place, keeping its description and parents.
+- The diff viewer's blame gutter (`app/diff/annotate.ts`, `BlameCell.svelte`) annotates the new
+  side of text files with `query_annotate`. Rows have a fixed height, so a run's first line is
+  marked with an inset shadow rather than a border; clicking a cell selects the origin change.
 - The files column mounts long lists in chunks over several frames, to keep selection→paint
   inside the budget; `app/perf.ts` records those timings as `performance.measure` entries.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
