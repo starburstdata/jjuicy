@@ -1,2 +1,5 @@
 [alias]
 gen = "test -F ts-rs"
+# npm install + build, then the same binary as `cargo build --release` - Tauri.toml's "app"
+# feature is for bundles and would drop the dock icon of a bare binary
+all = ["tauri", "build", "--no-bundle", "--config", '{"build":{"beforeBuildCommand":"npm install && npm run build","features":[]}}']

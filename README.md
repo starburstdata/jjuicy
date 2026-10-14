@@ -29,6 +29,13 @@ Run `ju` in a Jujutsu workspace, pass the workspace directory as an argument or 
 ### Configuration
 jjuicy uses `jj config`; `revset-aliases.immutable_heads()` is particularly important, as it determines how much history you can edit. jjuicy has some additional settings of its own, with defaults and documentation [here](src/config/jjuicy.toml).
 
+### Building from source
+Building needs Rust, Node.js and the [Tauri CLI](https://tauri.app/) (`cargo install tauri-cli`). From a checkout:
+```
+cargo all
+```
+`all` is a cargo alias (see `.cargo/config.toml`) that runs `npm install` and `npm run build` for the frontend, then builds the release binary at `target/release/ju` with the frontend embedded. It doesn't produce installer bundles; use `cargo tauri build` for those.
+
 ## Features
 jjuicy doesn't require [JJ](https://jj-vcs.github.io/jj/latest/install-and-setup/) installed, but you'll want it for tasks jjuicy doesn't cover. What it *does* cover:
 - Use the left pane to query and browse the log. Click to select revisions, shift-click for multiple selection, double-click to edit (if mutable) or create a new child (if immutable).
