@@ -18,5 +18,6 @@ With some dynamic way to show extra panes, replace content, open new windows &c,
 
 UI Refresh Follow-ups
 ---------------------
+* Measure log scroll on a 10k-row repo in a real webview (the e2e harness can't).
 * Hunk context menu: "move to child" (needs a target picker when there are several children).
 * Conflict view: per-hunk side acceptance; "accept" currently resolves the whole file to one side.

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onDestroy } from "svelte";
     import type { RevsResult } from "../messages/RevsResult";
     import ChangeObject from "../objects/ChangeObject.svelte";
     import Icon from "../controls/Icon.svelte";
@@ -20,6 +21,25 @@
     $: rows = $filesView == "tree" ? treeRows(visible, collapsedDirs) : listRows(visible);
     $: totalAdded = entries.reduce((n, e) => n + e.added, 0);
     $: totalRemoved = entries.reduce((n, e) => n + e.removed, 0);
+
+    // hundreds of draggable rows blow the selection→paint budget, so the rest mount in later frames
+    const RENDER_CHUNK = 50;
+    let rendered = RENDER_CHUNK;
+    let growFrame = 0;
+    $: grow(rows.length);
+
+    function grow(total: number) {
+        cancelAnimationFrame(growFrame);
+        rendered = RENDER_CHUNK;
+        let step = () => {
+            if (rendered >= total) return;
+            rendered += RENDER_CHUNK;
+            growFrame = requestAnimationFrame(step);
+        };
+        growFrame = requestAnimationFrame(step);
+    }
+
+    onDestroy(() => cancelAnimationFrame(growFrame));
 
     function toggleDir(path: string) {
         if (collapsedDirs.has(path)) collapsedDirs.delete(path);
@@ -95,7 +115,7 @@
                 {#if totalAdded > 0}<span class="added">+{totalAdded}</span>{/if}
                 {#if totalRemoved > 0}<span class="removed">−{totalRemoved}</span>{/if}
             </button>
-            {#each rows as row (row.type == "dir" ? `dir:${row.path}` : `file:${row.entry.change.path.repo_path}`)}
+            {#each rows.slice(0, rendered) as row (row.type == "dir" ? `dir:${row.path}` : `file:${row.entry.change.path.repo_path}`)}
                 {#if row.type == "dir"}
                     <button
                         class="dir-row"

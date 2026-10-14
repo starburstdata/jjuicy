@@ -38,6 +38,7 @@
     import type Settings from "./shell/Settings";
     import type { RepoEvent } from "./messages/RepoEvent";
     import RepositoryMutator from "./mutators/RepositoryMutator";
+    import { beginMeasure, endMeasure } from "./perf";
 
     interface $$Slots {
         default: {
@@ -187,6 +188,7 @@
     }
 
     async function loadChange(set: RevSet) {
+        beginMeasure("select-revision");
         let rev = await query<RevsResult>("query_revisions", { set }, (q) => (selection = q));
 
         // if empty, fall back to working copy
@@ -211,6 +213,7 @@
         }
 
         selection = rev;
+        endMeasure("select-revision");
         if (rev.type == "data" && rev.value.type == "Detail") {
             $selectionHeaders = rev.value.headers;
         }
