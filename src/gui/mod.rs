@@ -195,6 +195,8 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             query_log,
             query_log_next_page,
             query_revisions,
+            query_file_diff,
+            query_file_lines,
             query_remotes,
             query_snapshot,
             open_terminal,
@@ -525,6 +527,60 @@ fn query_revisions(
 ) -> Result<messages::queries::RevsResult, InvokeError> {
     let session_tx = app_state.get_session(window.label());
     resolve_set(&session_tx, set).map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
+fn query_file_diff(
+    window: Window,
+    app_state: State<AppState>,
+    set: messages::RevSet,
+    path: messages::TreePath,
+    context: u32,
+) -> Result<messages::queries::FileDiff, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::QueryFileDiff {
+            tx: call_tx,
+            set,
+            path,
+            context,
+        })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
+fn query_file_lines(
+    window: Window,
+    app_state: State<AppState>,
+    set: messages::RevSet,
+    path: messages::TreePath,
+    side: messages::queries::FileSide,
+    start: u32,
+    end: u32,
+) -> Result<Vec<String>, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::QueryFileLines {
+            tx: call_tx,
+            set,
+            path,
+            side,
+            start,
+            end,
+        })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
 }
 
 #[tauri::command(async)]

@@ -13,6 +13,9 @@ large-repo-heuristic = 100000
 # When disabled, snapshots will still be created if you run commands. 
 # auto-snapshot = 
 
+# Files larger than this (on either side of a diff) are not diffed until requested.
+max-diff-bytes = 2097152
+
 [jjuicy.ui]
 # Stores a list of recently opened directories for shell integration
 recent-workspaces = []

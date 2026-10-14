@@ -9,17 +9,19 @@ use std::{
 
 use anyhow::{Result, anyhow};
 
+use futures_util::stream::BoxStream;
 use futures_util::{StreamExt, try_join};
-use gix::bstr::ByteVec;
 use itertools::Itertools;
-use jj_cli::diff_util::LineDiffOptions;
+use jj_cli::diff_util::{self, LineDiffOptions};
 use jj_lib::{
     backend::CommitId,
+    commit::Commit,
     conflict_labels::ConflictLabels,
     conflicts::{
-        self, ConflictMarkerStyle, ConflictMaterializeOptions, MaterializedFileValue,
-        MaterializedTreeValue,
+        self, ConflictMarkerStyle, ConflictMaterializeOptions, MaterializedFileConflictValue,
+        MaterializedFileValue, MaterializedTreeValue,
     },
+    copies::{CopiesTreeDiffEntry, CopyRecords},
     diff::{
         CompareBytesExactly, CompareBytesIgnoreAllWhitespace, CompareBytesIgnoreWhitespaceAmount,
         ContentDiff, DiffHunk, DiffHunkKind, find_line_ranges,
@@ -29,7 +31,7 @@ use jj_lib::{
     graph::{GraphEdge, GraphEdgeType, TopoGroupedGraphIterator},
     matchers::EverythingMatcher,
     merge::{Diff, SameChange},
-    merged_tree::{TreeDiffEntry, TreeDiffStream},
+    merged_tree::MergedTree,
     ref_name::{RefNameBuf, RemoteNameBuf, RemoteRefSymbol},
     repo::Repo,
     repo_path::RepoPath,
@@ -38,8 +40,9 @@ use jj_lib::{
     tree_merge::MergeOptions,
 };
 
+use crate::config::JjuicySettings;
 use crate::messages::{
-    ChangeHunk, ChangeLocation, ChangeRange, MultilineString, RevSet, queries::*,
+    ChangeHunk, ChangeLocation, ChangeRange, MultilineString, RevSet, TreePath, queries::*,
 };
 #[cfg(test)]
 use crate::messages::{RevHeader, RevId};
@@ -466,22 +469,31 @@ pub fn query_revision(ws: &WorkspaceSession<'_>, id: &RevId) -> Result<Option<Re
         .transpose()
 }
 
-/// Read display details for a revset (limited to sequences). Returns headers in topological order (children first).
-pub async fn query_revisions(ws: &WorkspaceSession<'_>, set: RevSet) -> Result<RevsResult> {
+/// Commits of a revset along with the trees on either side of its combined diff.
+struct DiffEndpoints {
+    commits: Vec<Commit>,
+    parent_tree: MergedTree,
+    final_tree: MergedTree,
+    copy_records: CopyRecords,
+}
+
+async fn resolve_diff_endpoints(
+    ws: &WorkspaceSession<'_>,
+    set: &RevSet,
+) -> Result<Option<DiffEndpoints>> {
     // resolve singleton or arbitrary revset
     let commits = if set.from.change.hex == set.to.change.hex {
         match ws.resolve_optional_id(&set.from)? {
             Some(commit) => vec![commit],
-            None => return Ok(RevsResult::NotFound { set }),
+            None => return Ok(None),
         }
     } else {
-        match ws.resolve_optional_set(&set)? {
+        match ws.resolve_optional_set(set)? {
             Some(commits) => commits,
-            None => return Ok(RevsResult::NotFound { set }),
+            None => return Ok(None),
         }
     };
 
-    // trees before and after the revset
     let oldest_commit = commits.last().ok_or(anyhow!("slice is_empty()"))?;
     let oldest_parents = oldest_commit.parents().await?;
     let parent_tree = rewrite::merge_commit_trees(ws.repo(), &oldest_parents).await?;
@@ -489,16 +501,52 @@ pub async fn query_revisions(ws: &WorkspaceSession<'_>, set: RevSet) -> Result<R
     let newest_commit = commits.first().ok_or(anyhow!("slice is_empty()"))?;
     let final_tree = newest_commit.tree();
 
-    // compute combined changes: diff from parents to final
-    let mut changes = Vec::new();
-    let tree_diff = parent_tree.diff_stream(&final_tree, &EverythingMatcher);
+    // rename detection is best-effort; backends without copy tracking just report nothing
+    let mut copy_records = CopyRecords::default();
+    for parent in &oldest_parents {
+        let records = diff_util::get_copy_records(
+            ws.repo().store(),
+            parent.id(),
+            newest_commit.id(),
+            &EverythingMatcher,
+        )
+        .and_then(|records| copy_records.add_records(records));
+        if let Err(err) = records {
+            log::warn!("copy records unavailable: {err}");
+            copy_records = CopyRecords::default();
+            break;
+        }
+    }
+
+    Ok(Some(DiffEndpoints {
+        commits,
+        parent_tree,
+        final_tree,
+        copy_records,
+    }))
+}
+
+/// Read display details for a revset (limited to sequences). Returns headers in topological order (children first).
+pub async fn query_revisions(ws: &WorkspaceSession<'_>, set: RevSet) -> Result<RevsResult> {
+    let Some(DiffEndpoints {
+        commits,
+        parent_tree,
+        final_tree,
+        copy_records,
+    }) = resolve_diff_endpoints(ws, &set).await?
+    else {
+        return Ok(RevsResult::NotFound { set });
+    };
+    let oldest_commit = commits.last().ok_or(anyhow!("slice is_empty()"))?;
+
+    let tree_diff =
+        parent_tree.diff_stream_with_copies(&final_tree, &EverythingMatcher, &copy_records);
     let conflict_labels = Diff::new(parent_tree.labels(), final_tree.labels());
-    format_tree_changes(ws, &mut changes, tree_diff, conflict_labels).await?;
+    let changes = format_tree_changes(ws, tree_diff, conflict_labels).await?;
 
     // find inherited conflicts: files conflicted in final_tree but unchanged relative to parent.
     // conflicted changes with empty hunks (tree value differs but materialized content is identical)
-    // are also handled here, since they have nothing useful to display as a diff.
-    changes.retain(|c| !c.has_conflict || !c.hunks.is_empty());
+    // are dropped by format_tree_changes and end up here, since they have nothing useful to display as a diff.
     let changed_paths: HashSet<&str> = changes.iter().map(|c| c.path.repo_path.as_str()).collect();
     let mut conflicts = Vec::new();
     for (path, entry) in final_tree.entries() {
@@ -519,18 +567,10 @@ pub async fn query_revisions(ws: &WorkspaceSession<'_>, set: RevSet) -> Result<R
             .await?
             {
                 MaterializedTreeValue::FileConflict(file) => {
-                    let merge_result = files::merge_hunks(
-                        &file.contents,
-                        &MergeOptions {
-                            hunk_level: FileMergeHunkLevel::Line,
-                            same_change: SameChange::Accept,
-                        },
-                    );
-                    let hunks = format_conflict_hunks(merge_result, &file.labels, 3)?;
+                    let hunks = format_conflict_hunks(merge_file_conflict(&file), &file.labels, 3)?;
                     if !hunks.is_empty() {
                         conflicts.push(RevConflict {
                             path: formatted_path,
-                            hunks,
                         });
                     }
                 }
@@ -570,6 +610,128 @@ pub async fn query_revisions(ws: &WorkspaceSession<'_>, set: RevSet) -> Result<R
     })
 }
 
+/// Full diff of one file across a revset, with display rows and drag headers.
+pub async fn query_file_diff(
+    ws: &WorkspaceSession<'_>,
+    set: RevSet,
+    path: TreePath,
+    context: u32,
+) -> Result<FileDiff> {
+    let DiffEndpoints {
+        parent_tree,
+        final_tree,
+        copy_records,
+        ..
+    } = resolve_diff_endpoints(ws, &set)
+        .await?
+        .ok_or(anyhow!("revision not found"))?;
+
+    let store = ws.repo().store();
+    let repo_path = RepoPath::from_internal_string(&path.repo_path)?;
+    let source_path = copy_records
+        .for_target(repo_path)
+        .map(|record| record.source.as_ref())
+        .unwrap_or(repo_path);
+    let old_path = if source_path != repo_path {
+        Some(ws.format_path(source_path)?)
+    } else {
+        None
+    };
+
+    let before = parent_tree.path_value(source_path)?;
+    let after = final_tree.path_value(repo_path)?;
+    let (before_value, after_value) = try_join!(
+        conflicts::materialize_tree_value(store, source_path, before, parent_tree.labels()),
+        conflicts::materialize_tree_value(store, repo_path, after, final_tree.labels())
+    )?;
+    let context = context as usize;
+
+    if let MaterializedTreeValue::FileConflict(file) = after_value {
+        let old_content = read_value_contents(source_path, before_value).await?;
+        let merge_result = merge_file_conflict(&file);
+        let blocks = format_conflict_blocks(&merge_result, &file.labels);
+        let hunks = format_conflict_hunks(merge_result, &file.labels, context)?;
+        let new_content =
+            read_value_contents(repo_path, MaterializedTreeValue::FileConflict(file)).await?;
+        return Ok(FileDiff {
+            path,
+            old_path,
+            kind: FileDiffKind::Conflict,
+            hunks: hunks.into_iter().map(conflict_hunk_rows).collect(),
+            conflict: Some(blocks),
+            old_line_count: count_lines(&old_content),
+            new_line_count: count_lines(&new_content),
+        });
+    }
+
+    let old_content = read_value_contents(source_path, before_value).await?;
+    let new_content = read_value_contents(repo_path, after_value).await?;
+    let kind = classify_contents(
+        &old_content,
+        &new_content,
+        ws.data.workspace_settings.query_max_diff_bytes(),
+    );
+    let hunks = if kind == FileDiffKind::Text {
+        unified_file_hunks(context, &old_content, &new_content)?
+    } else {
+        Vec::new()
+    };
+
+    Ok(FileDiff {
+        path,
+        old_path,
+        kind,
+        hunks,
+        conflict: None,
+        old_line_count: count_lines(&old_content),
+        new_line_count: count_lines(&new_content),
+    })
+}
+
+/// Lines `start..=end` (1-based, clamped) of a file on one side of a revset's diff.
+pub async fn query_file_lines(
+    ws: &WorkspaceSession<'_>,
+    set: RevSet,
+    path: TreePath,
+    side: FileSide,
+    start: u32,
+    end: u32,
+) -> Result<Vec<String>> {
+    let DiffEndpoints {
+        parent_tree,
+        final_tree,
+        ..
+    } = resolve_diff_endpoints(ws, &set)
+        .await?
+        .ok_or(anyhow!("revision not found"))?;
+
+    let tree = match side {
+        FileSide::Old => parent_tree,
+        FileSide::New => final_tree,
+    };
+    let repo_path = RepoPath::from_internal_string(&path.repo_path)?;
+    let value = conflicts::materialize_tree_value(
+        ws.repo().store(),
+        repo_path,
+        tree.path_value(repo_path)?,
+        tree.labels(),
+    )
+    .await?;
+    let content = read_value_contents(repo_path, value).await?;
+
+    let start = start.max(1) as usize;
+    let end = end as usize;
+    if end < start {
+        return Ok(Vec::new());
+    }
+    Ok(String::from_utf8_lossy(&content)
+        .lines()
+        .skip(start - 1)
+        .take(end - start + 1)
+        .map(|line| line.to_owned())
+        .collect())
+}
+
 pub fn query_remotes(
     ws: &WorkspaceSession,
     tracking_bookmark: Option<String>,
@@ -603,14 +765,17 @@ pub fn query_remotes(
 
 async fn format_tree_changes(
     ws: &WorkspaceSession<'_>,
-    changes: &mut Vec<RevChange>,
-    mut tree_diff: TreeDiffStream<'_>,
+    mut tree_diff: BoxStream<'_, CopiesTreeDiffEntry>,
     conflict_labels: Diff<&ConflictLabels>,
-) -> Result<()> {
+) -> Result<Vec<RevChangeSummary>> {
     let store = ws.repo().store();
+    let max_diff_bytes = ws.data.workspace_settings.query_max_diff_bytes();
+    let mut changes = Vec::new();
 
-    while let Some(TreeDiffEntry { path, values }) = tree_diff.next().await {
-        let diff = values?;
+    while let Some(entry) = tree_diff.next().await {
+        let diff = entry.values?;
+        let source = entry.path.source();
+        let target = entry.path.target();
         let before = &diff.before;
         let after = &diff.after;
 
@@ -624,99 +789,229 @@ async fn format_tree_changes(
 
         let has_conflict = !after.is_resolved();
 
-        let hunks = if has_conflict {
-            let after_value = conflicts::materialize_tree_value(
+        let (before_value, after_value) = try_join!(
+            conflicts::materialize_tree_value(
                 store,
-                &path,
-                after.clone(),
-                conflict_labels.after,
-            )
-            .await?;
-            match after_value {
-                MaterializedTreeValue::FileConflict(file) => {
-                    let merge_result = files::merge_hunks(
-                        &file.contents,
-                        &MergeOptions {
-                            hunk_level: FileMergeHunkLevel::Line,
-                            same_change: SameChange::Accept,
-                        },
-                    );
-                    format_conflict_hunks(merge_result, &file.labels, 3)?
-                }
-                other => {
-                    let before_value = conflicts::materialize_tree_value(
-                        store,
-                        &path,
-                        before.clone(),
-                        conflict_labels.before,
-                    )
-                    .await?;
-                    get_value_hunks(3, &path, before_value, other).await?
-                }
-            }
-        } else {
-            let before_future = conflicts::materialize_tree_value(
-                store,
-                &path,
+                source,
                 before.clone(),
-                conflict_labels.before,
-            );
-            let after_future = conflicts::materialize_tree_value(
-                store,
-                &path,
-                after.clone(),
-                conflict_labels.after,
-            );
-            let (before_value, after_value) = try_join!(before_future, after_future)?;
-            get_value_hunks(3, &path, before_value, after_value).await?
-        };
+                conflict_labels.before
+            ),
+            conflicts::materialize_tree_value(store, target, after.clone(), conflict_labels.after)
+        )?;
 
-        changes.push(RevChange {
-            path: ws.format_path(path)?,
+        let (added, removed, binary) =
+            if let MaterializedTreeValue::FileConflict(file) = after_value {
+                let hunks = format_conflict_hunks(merge_file_conflict(&file), &file.labels, 3)?;
+                // tree value differs but materialised content is identical: reported as an inherited conflict instead
+                if hunks.is_empty() {
+                    continue;
+                }
+                let lines = hunks.iter().flat_map(|h| h.lines.lines.iter());
+                let (mut added, mut removed) = (0, 0);
+                for line in lines {
+                    if line.starts_with('+') {
+                        added += 1;
+                    } else if line.starts_with('-') {
+                        removed += 1;
+                    }
+                }
+                (added, removed, false)
+            } else {
+                let old_content = read_value_contents(source, before_value).await?;
+                let new_content = read_value_contents(target, after_value).await?;
+                match classify_contents(&old_content, &new_content, max_diff_bytes) {
+                    FileDiffKind::Text => {
+                        let (added, removed) = line_diff_stat(&old_content, &new_content);
+                        (added, removed, false)
+                    }
+                    FileDiffKind::Binary { .. } => (0, 0, true),
+                    _ => (0, 0, false),
+                }
+            };
+
+        changes.push(RevChangeSummary {
             kind,
+            path: ws.format_path(target)?,
+            old_path: entry
+                .path
+                .source
+                .as_ref()
+                .map(|(path, _)| ws.format_path(path))
+                .transpose()?,
             has_conflict,
-            hunks,
+            added,
+            removed,
+            binary,
         });
     }
-    Ok(())
+    Ok(changes)
 }
 
-async fn get_value_hunks(
-    num_context_lines: usize,
-    path: &RepoPath,
-    left_value: MaterializedTreeValue,
-    right_value: MaterializedTreeValue,
-) -> Result<Vec<ChangeHunk>> {
-    if left_value.is_absent() {
-        let right_part = get_value_contents(path, right_value).await?;
-        get_unified_hunks(num_context_lines, &[], &right_part)
-    } else if right_value.is_present() {
-        let left_part = get_value_contents(path, left_value).await?;
-        let right_part = get_value_contents(path, right_value).await?;
-        get_unified_hunks(num_context_lines, &left_part, &right_part)
+fn merge_file_conflict(file: &MaterializedFileConflictValue) -> MergeResult {
+    files::merge_hunks(
+        &file.contents,
+        &MergeOptions {
+            hunk_level: FileMergeHunkLevel::Line,
+            same_change: SameChange::Accept,
+        },
+    )
+}
+
+fn is_binary(content: &[u8]) -> bool {
+    content[..8000.min(content.len())].contains(&b'\0') // same heuristic git uses
+}
+
+pub(super) fn classify_contents(old: &[u8], new: &[u8], max_diff_bytes: usize) -> FileDiffKind {
+    let old_size = old.len() as u32;
+    let new_size = new.len() as u32;
+    if is_binary(old) || is_binary(new) {
+        FileDiffKind::Binary { old_size, new_size }
+    } else if old.len() > max_diff_bytes || new.len() > max_diff_bytes {
+        FileDiffKind::TooLarge { old_size, new_size }
     } else {
-        let left_part = get_value_contents(path, left_value).await?;
-        get_unified_hunks(num_context_lines, &left_part, &[])
+        FileDiffKind::Text
     }
 }
 
-async fn get_value_contents(path: &RepoPath, value: MaterializedTreeValue) -> Result<Vec<u8>> {
+fn count_lines(content: &[u8]) -> u32 {
+    let newlines = content.iter().filter(|b| **b == b'\n').count();
+    let unterminated = !content.is_empty() && !content.ends_with(b"\n");
+    (newlines + usize::from(unterminated)) as u32
+}
+
+fn line_diff_stat(old: &[u8], new: &[u8]) -> (u32, u32) {
+    let diff = diff_by_line(
+        [old, new],
+        &LineDiffOptions {
+            compare_mode: LineCompareMode::Exact,
+        },
+    );
+    let (mut added, mut removed) = (0, 0);
+    for hunk in diff.hunks() {
+        if hunk.kind == DiffHunkKind::Different {
+            removed += count_lines(hunk.contents[0]);
+            added += count_lines(hunk.contents[1]);
+        }
+    }
+    (added, removed)
+}
+
+/// the conflict as labelled side/base blocks, for accept-side actions
+fn format_conflict_blocks(merge_result: &MergeResult, labels: &ConflictLabels) -> ConflictBlocks {
+    fn split_lines(content: &[u8]) -> Vec<String> {
+        String::from_utf8_lossy(content)
+            .lines()
+            .map(|line| line.to_owned())
+            .collect()
+    }
+
+    let mut regions = Vec::new();
+    let hunks = match merge_result {
+        MergeResult::Resolved(content) => {
+            regions.push(ConflictRegion::Resolved {
+                lines: split_lines(content),
+            });
+            return ConflictBlocks { regions };
+        }
+        MergeResult::Conflict(hunks) => hunks,
+    };
+
+    for hunk in hunks {
+        if let Some(content) = hunk.resolve_trivial(SameChange::Accept) {
+            let lines = split_lines(content);
+            if let Some(ConflictRegion::Resolved { lines: prev }) = regions.last_mut() {
+                prev.extend(lines);
+            } else {
+                regions.push(ConflictRegion::Resolved { lines });
+            }
+            continue;
+        }
+
+        let num_bases = hunk.removes().len();
+        regions.push(ConflictRegion::Conflict {
+            sides: hunk
+                .adds()
+                .enumerate()
+                .map(|(i, side)| ConflictSide {
+                    label: labels
+                        .get_add(i)
+                        .map_or_else(|| format!("side {}", i + 1), |l| l.to_owned()),
+                    lines: split_lines(side),
+                })
+                .collect(),
+            bases: hunk
+                .removes()
+                .enumerate()
+                .map(|(i, base)| ConflictSide {
+                    label: labels.get_remove(i).map_or_else(
+                        || {
+                            if num_bases == 1 {
+                                "base".to_owned()
+                            } else {
+                                format!("base {}", i + 1)
+                            }
+                        },
+                        |l| l.to_owned(),
+                    ),
+                    lines: split_lines(base),
+                })
+                .collect(),
+        });
+    }
+
+    ConflictBlocks { regions }
+}
+
+/// conflict hunks are prefix-encoded; markers carry no line on either side
+fn conflict_hunk_rows(header: ChangeHunk) -> FileDiffHunk {
+    let mut old_line = header.location.from_file.start as u32;
+    let mut new_line = header.location.to_file.start as u32;
+    let mut rows = Vec::new();
+    for line in &header.lines.lines {
+        let text = line
+            .get(1..)
+            .unwrap_or("")
+            .trim_end_matches('\n')
+            .to_owned();
+        let kind = if line.starts_with(" <<<<<<<")
+            || line.starts_with(" +++++++")
+            || line.starts_with(" >>>>>>>")
+        {
+            DiffRowKind::Marker
+        } else if line.starts_with('-') {
+            DiffRowKind::Removed
+        } else if line.starts_with('+') {
+            DiffRowKind::Added
+        } else {
+            DiffRowKind::Context
+        };
+        let (old, new) = match kind {
+            DiffRowKind::Marker => (None, None),
+            DiffRowKind::Removed => (Some(old_line), None),
+            DiffRowKind::Added => (None, Some(new_line)),
+            DiffRowKind::Context => (Some(old_line), Some(new_line)),
+        };
+        old_line += u32::from(old.is_some());
+        new_line += u32::from(new.is_some());
+        rows.push(DiffRow {
+            kind,
+            old_line: old,
+            new_line: new,
+            text,
+            tokens: Vec::new(),
+        });
+    }
+    FileDiffHunk { header, rows }
+}
+
+async fn read_value_contents(path: &RepoPath, value: MaterializedTreeValue) -> Result<Vec<u8>> {
     use tokio::io::AsyncReadExt;
 
     match value {
-        MaterializedTreeValue::Absent => Err(anyhow!(
-            "Absent path {path:?} in diff should have been handled by caller"
-        )),
+        MaterializedTreeValue::Absent => Ok(Vec::new()),
         MaterializedTreeValue::File(MaterializedFileValue { mut reader, .. }) => {
             let mut contents = vec![];
             reader.read_to_end(&mut contents).await?;
-
-            let start = &contents[..8000.min(contents.len())]; // same heuristic git uses
-            let is_binary = start.contains(&b'\0');
-            if is_binary {
-                contents.clear();
-                contents.push_str("(binary)");
-            }
             Ok(contents)
         }
         MaterializedTreeValue::Symlink { target, .. } => Ok(target.into_bytes()),
@@ -1005,61 +1300,137 @@ fn get_unified_hunks(
     left_content: &[u8],
     right_content: &[u8],
 ) -> Result<Vec<ChangeHunk>> {
-    let mut hunks = Vec::new();
+    unified_diff_hunks(
+        left_content,
+        right_content,
+        &unified_diff_options(num_context_lines),
+    )
+    .iter()
+    .map(change_hunk_header)
+    .collect()
+}
 
+fn unified_diff_options(num_context_lines: usize) -> UnifiedDiffOptions {
+    UnifiedDiffOptions {
+        context: num_context_lines,
+        line_diff: LineDiffOptions {
+            compare_mode: LineCompareMode::Exact,
+        },
+    }
+}
+
+/// prefix-encoded hunk, the payload MoveHunk/CopyHunk expect
+fn change_hunk_header(hunk: &UnifiedDiffHunk) -> Result<ChangeHunk> {
+    let location = ChangeLocation {
+        from_file: ChangeRange {
+            start: hunk.left_line_range.start,
+            len: hunk.left_line_range.len(),
+        },
+        to_file: ChangeRange {
+            start: hunk.right_line_range.start,
+            len: hunk.right_line_range.len(),
+        },
+    };
+
+    let mut lines = Vec::new();
+    for (line_type, tokens) in &hunk.lines {
+        let mut formatter: Vec<u8> = vec![];
+        match line_type {
+            DiffLineType::Context => write!(formatter, " ")?,
+            DiffLineType::Removed => write!(formatter, "-")?,
+            DiffLineType::Added => write!(formatter, "+")?,
+        }
+        for (_, content) in tokens {
+            formatter.write_all(content)?;
+        }
+        lines.push(String::from_utf8_lossy(&formatter).into_owned());
+    }
+
+    Ok(ChangeHunk {
+        location,
+        lines: MultilineString { lines },
+    })
+}
+
+fn unified_file_hunks(
+    num_context_lines: usize,
+    left_content: &[u8],
+    right_content: &[u8],
+) -> Result<Vec<FileDiffHunk>> {
+    let mut hunks = Vec::new();
     for hunk in unified_diff_hunks(
         left_content,
         right_content,
-        &UnifiedDiffOptions {
-            context: num_context_lines,
-            line_diff: LineDiffOptions {
-                compare_mode: LineCompareMode::Exact,
-            },
-        },
+        &unified_diff_options(num_context_lines),
     ) {
-        let location = ChangeLocation {
-            from_file: ChangeRange {
-                start: hunk.left_line_range.start,
-                len: hunk.left_line_range.len(),
-            },
-            to_file: ChangeRange {
-                start: hunk.right_line_range.start,
-                len: hunk.right_line_range.len(),
-            },
-        };
-
-        let mut lines = Vec::new();
-        for (line_type, tokens) in hunk.lines {
-            let mut formatter: Vec<u8> = vec![];
-            match line_type {
-                DiffLineType::Context => {
-                    write!(formatter, " ")?;
-                }
-                DiffLineType::Removed => {
-                    write!(formatter, "-")?;
-                }
-                DiffLineType::Added => {
-                    write!(formatter, "+")?;
-                }
-            }
-
-            for (token_type, content) in tokens {
-                match token_type {
-                    DiffTokenType::Matching => formatter.write_all(content)?,
-                    DiffTokenType::Different => formatter.write_all(content)?, // XXX mark this for GUI display
-                }
-            }
-
-            lines.push(String::from_utf8_lossy(&formatter).into_owned());
+        let header = change_hunk_header(&hunk)?;
+        let mut old_line = hunk.left_line_range.start as u32;
+        let mut new_line = hunk.right_line_range.start as u32;
+        let mut rows = Vec::new();
+        for (line_type, tokens) in &hunk.lines {
+            let (kind, old, new) = match line_type {
+                DiffLineType::Context => (DiffRowKind::Context, Some(old_line), Some(new_line)),
+                DiffLineType::Removed => (DiffRowKind::Removed, Some(old_line), None),
+                DiffLineType::Added => (DiffRowKind::Added, None, Some(new_line)),
+            };
+            old_line += u32::from(old.is_some());
+            new_line += u32::from(new.is_some());
+            let (text, tokens) = format_row_tokens(tokens);
+            rows.push(DiffRow {
+                kind,
+                old_line: old,
+                new_line: new,
+                text,
+                tokens,
+            });
         }
+        hunks.push(FileDiffHunk { header, rows });
+    }
+    Ok(hunks)
+}
 
-        hunks.push(ChangeHunk {
-            location,
-            lines: MultilineString { lines },
-        });
+/// row text without its newline, plus changed ranges in utf-16 units. a row with
+/// nothing matching gets no ranges - highlighting the whole line adds no information.
+fn format_row_tokens(tokens: &[(DiffTokenType, &[u8])]) -> (String, Vec<DiffToken>) {
+    let mut text = String::new();
+    let mut ranges: Vec<DiffToken> = Vec::new();
+    let mut offset = 0u32;
+    let mut any_matching = false;
+    for (token_type, content) in tokens {
+        let content = String::from_utf8_lossy(content);
+        let len = content.encode_utf16().count() as u32;
+        match token_type {
+            DiffTokenType::Matching => any_matching = true,
+            DiffTokenType::Different => match ranges.last_mut() {
+                Some(prev) if prev.end == offset => prev.end += len,
+                _ => ranges.push(DiffToken {
+                    start: offset,
+                    end: offset + len,
+                }),
+            },
+        }
+        text.push_str(&content);
+        offset += len;
     }
 
-    Ok(hunks)
+    let trimmed = text.trim_end_matches(['\n', '\r']).len();
+    text.truncate(trimmed);
+    if !any_matching {
+        return (text, Vec::new());
+    }
+
+    let text_len = text.encode_utf16().count() as u32;
+    let ranges = ranges
+        .into_iter()
+        .filter_map(|range| {
+            let end = range.end.min(text_len);
+            (range.start < end).then_some(DiffToken {
+                start: range.start,
+                end,
+            })
+        })
+        .collect();
+    (text, ranges)
 }
 
 /**************************/

@@ -2,7 +2,8 @@
     import type { RevsResult } from "../messages/RevsResult";
     import { ignoreToggled, selectedFile } from "../stores";
     import { mergeChanges, resolveSelection, toEntry } from "../files/files";
-    import HunkObject from "../objects/HunkObject.svelte";
+    import DiffViewer from "../diff/DiffViewer.svelte";
+    import FileHeader from "../diff/FileHeader.svelte";
     import RevisionMutator from "../mutators/RevisionMutator";
     import Pane from "../shell/Pane.svelte";
     import { onEvent } from "../ipc";
@@ -26,49 +27,6 @@
         selectedPath == null ? syntheticChanges : syntheticChanges.filter((c) => c.path.repo_path == selectedPath);
 
     onEvent<string>("jjuicy://menu/revision", (event) => mutator.handle(event));
-
-    function lineColour(line: string): string | null {
-        if (line.startsWith("+")) {
-            return "add";
-        } else if (line.startsWith("-")) {
-            return "remove";
-        } else {
-            return null;
-        }
-    }
-
-    interface DiffSegment {
-        conflict: boolean;
-        lines: string[];
-    }
-
-    function segmentHunk(hunkLines: string[]): DiffSegment[] {
-        let segments: DiffSegment[] = [];
-        let current: DiffSegment = { conflict: false, lines: [] };
-
-        for (let line of hunkLines) {
-            if (line.startsWith(" <<<<<<< ")) {
-                if (current.lines.length > 0) segments.push(current);
-                current = { conflict: true, lines: [line] };
-            } else if (line.startsWith(" >>>>>>> ")) {
-                current.lines.push(line);
-                segments.push(current);
-                current = { conflict: false, lines: [] };
-            } else {
-                current.lines.push(line);
-            }
-        }
-        if (current.lines.length > 0) segments.push(current);
-        return segments;
-    }
-
-    function isConflictMarker(line: string): boolean {
-        return (
-            line.startsWith(" <<<<<<< ") ||
-            line.startsWith(" >>>>>>> ") ||
-            line.startsWith(" +++++++ ")
-        );
-    }
 </script>
 
 <Pane>
@@ -79,20 +37,8 @@
             <div class="changes">
                 {#each shownChanges as change (change.path.repo_path)}
                     <div class="change">
-                        <div class="change-path">{change.path.relative_path}</div>
-                        {#each change.hunks as hunk}
-                            <div class="hunk">
-                                <HunkObject
-                                    header={!change.has_conflict && singleton ? newest : null}
-                                    path={change.path}
-                                    {hunk} />
-                            </div>
-                            <pre class="diff">{#each segmentHunk(hunk.lines.lines) as segment}{#if segment.conflict}<span class="conflict-region">{#each segment.lines as line}{#if isConflictMarker(line)}<span class="conflict-marker">{line}</span>{:else}<span class={lineColour(line)}
-                                        >{line}</span
-                                    >{/if}{/each}</span>{:else}{#each segment.lines as line}<span class={lineColour(line)}
-                                        >{line}</span
-                                    >{/each}{/if}{/each}</pre>
-                        {/each}
+                        <FileHeader {change} header={singleton ? newest : null} />
+                        <DiffViewer set={revs.set} {change} header={!change.has_conflict && singleton ? newest : null} />
                     </div>
                 {/each}
             </div>
@@ -159,53 +105,5 @@
         font-size: small;
         margin: 0;
         pointer-events: auto;
-    }
-
-    .change-path {
-        font-family: var(--ju-text-familyCode);
-        font-size: var(--ju-text-sizeMd);
-        color: var(--ju-colors-foregroundMuted);
-        padding: 3px 6px;
-        user-select: text;
-        background: var(--ju-colors-surface);
-        border-bottom: 1px solid var(--ju-colors-outline);
-        word-break: break-all;
-    }
-
-    .hunk {
-        margin: 0;
-        text-align: center;
-        background: var(--ju-colors-surface);
-    }
-
-    .diff {
-        margin: 0;
-        background: var(--ju-colors-background);
-        font-family: var(--ju-text-familyCode);
-        font-size: var(--ju-text-sizeMd);
-        user-select: text;
-    }
-
-    .add {
-        color: var(--ju-colors-added);
-    }
-
-    .remove {
-        color: var(--ju-colors-removed);
-    }
-
-    .conflict-region {
-        display: block;
-        background: repeating-linear-gradient(
-            120deg,
-            transparent 0px,
-            transparent 12px,
-            var(--ctp-surface0) 12px,
-            var(--ctp-surface0) 15px
-        );
-    }
-
-    .conflict-marker {
-        color: var(--ctp-overlay0);
     }
 </style>

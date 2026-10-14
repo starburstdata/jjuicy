@@ -3,26 +3,24 @@ import { render, fireEvent } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { get } from "svelte/store";
 import type { RevsResult } from "../messages/RevsResult";
-import type { RevChange } from "../messages/RevChange";
+import type { RevChangeSummary } from "../messages/RevChangeSummary";
 import type { ChangeKind } from "../messages/ChangeKind";
 import { setupMocks, cleanupMocks } from "../mocks";
 import { fuzzyMatch, mergeChanges, resolveSelection, toEntry, treeRows } from "./files";
 
-function mkChange(path: string, kind: ChangeKind = "Modified", lines: string[] = ["+a", "-b", " c"]): RevChange {
+function mkChange(path: string, kind: ChangeKind = "Modified", added = 1, removed = 1): RevChangeSummary {
     return {
         kind,
         path: { repo_path: path, relative_path: path },
+        old_path: null,
         has_conflict: false,
-        hunks: [
-            {
-                location: { from_file: { start: 1, len: 1 }, to_file: { start: 1, len: 1 } },
-                lines: { lines },
-            },
-        ],
+        added,
+        removed,
+        binary: false,
     };
 }
 
-function mkRevs(hex: string, changes: RevChange[]): Extract<RevsResult, { type: "Detail" }> {
+function mkRevs(hex: string, changes: RevChangeSummary[]): Extract<RevsResult, { type: "Detail" }> {
     let id = {
         change: { type: "ChangeId" as const, hex, prefix: hex.slice(0, 3), rest: hex.slice(3), offset: null, is_divergent: false },
         commit: { type: "CommitId" as const, hex, prefix: hex.slice(0, 4), rest: hex.slice(4) },
@@ -53,14 +51,14 @@ describe("files", () => {
     it("sorts conflicts first, then by path", () => {
         let merged = mergeChanges(
             [mkChange("b.txt"), mkChange("a.txt")],
-            [{ path: { repo_path: "z.txt", relative_path: "z.txt" }, hunks: [] }],
+            [{ path: { repo_path: "z.txt", relative_path: "z.txt" } }],
         );
         expect(merged.map((c) => c.path.repo_path)).toEqual(["z.txt", "a.txt", "b.txt"]);
         expect(merged[0].has_conflict).toBe(true);
     });
 
-    it("counts added and removed lines", () => {
-        let entry = toEntry(mkChange("src/x.rs", "Modified", ["+a", "+b", "-c", " d"]));
+    it("carries added and removed counts", () => {
+        let entry = toEntry(mkChange("src/x.rs", "Modified", 2, 1));
         expect(entry).toMatchObject({ name: "x.rs", dir: "src", added: 2, removed: 1 });
     });
 

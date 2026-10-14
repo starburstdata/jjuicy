@@ -1,8 +1,8 @@
-import type { RevChange } from "../messages/RevChange";
+import type { RevChangeSummary } from "../messages/RevChangeSummary";
 import type { RevConflict } from "../messages/RevConflict";
 
 export interface FileEntry {
-    change: RevChange;
+    change: RevChangeSummary;
     name: string;
     dir: string;
     added: number;
@@ -19,19 +19,22 @@ export interface FileSelection {
 }
 
 // unresolved conflicts don't appear in the diff, so they become pseudo-changes
-export function mergeChanges(changes: RevChange[], conflicts: RevConflict[]): RevChange[] {
+export function mergeChanges(changes: RevChangeSummary[], conflicts: RevConflict[]): RevChangeSummary[] {
     let merged = changes.concat(
         conflicts.map((conflict) => ({
             kind: "None",
             path: conflict.path,
+            old_path: null,
             has_conflict: true,
-            hunks: conflict.hunks,
+            added: 0,
+            removed: 0,
+            binary: false,
         })),
     );
     return merged.sort(compareChanges);
 }
 
-export function compareChanges(a: RevChange, b: RevChange): number {
+export function compareChanges(a: RevChangeSummary, b: RevChangeSummary): number {
     if (a.has_conflict != b.has_conflict) return a.has_conflict ? -1 : 1;
     return a.path.relative_path.localeCompare(b.path.relative_path);
 }
@@ -41,23 +44,12 @@ export function splitPath(p: string): [string, string] {
     return sep >= 0 ? [p.slice(0, sep), p.slice(sep + 1)] : ["", p];
 }
 
-export function toEntry(change: RevChange): FileEntry {
+export function toEntry(change: RevChangeSummary): FileEntry {
     let [dir, name] = splitPath(change.path.relative_path);
-    let added = 0;
-    let removed = 0;
-    // conflict hunks are materialised file content, not a diff
-    if (!change.has_conflict || change.kind != "None") {
-        for (let hunk of change.hunks) {
-            for (let line of hunk.lines.lines) {
-                if (line.startsWith("+")) added++;
-                else if (line.startsWith("-")) removed++;
-            }
-        }
-    }
-    return { change, name, dir, added, removed };
+    return { change, name, dir, added: change.added, removed: change.removed };
 }
 
-export function badge(change: RevChange): { symbol: string; state: "add" | "change" | "remove" | "conflict" } {
+export function badge(change: RevChangeSummary): { symbol: string; state: "add" | "change" | "remove" | "conflict" } {
     if (change.has_conflict) return { symbol: "!", state: "conflict" };
     switch (change.kind) {
         case "Added":

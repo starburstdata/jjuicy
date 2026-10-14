@@ -799,7 +799,8 @@ mod tests {
 
         let from_rev = query_by_id(&ws, revs::main_bookmark()).await?;
         let to_rev = query_by_id(&ws, revs::working_copy()).await?;
-        assert_matches!(from_rev, RevsResult::Detail { changes, .. } if changes.len() == 2);
+        // the c.txt -> d.txt rename is reported as one change
+        assert_matches!(from_rev, RevsResult::Detail { changes, .. } if changes.len() == 1);
         assert_matches!(to_rev, RevsResult::Detail { changes, .. } if changes.is_empty());
 
         let result = MoveChanges {

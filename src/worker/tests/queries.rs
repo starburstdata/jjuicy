@@ -1,9 +1,33 @@
 use super::{mkid, mkrepo, revs};
-use crate::messages::{RevSet, StoreRef, queries::RevsResult};
+use crate::messages::{
+    RevId, RevSet, StoreRef, TreePath,
+    queries::{ConflictRegion, DiffRowKind, FileDiff, FileDiffKind, FileSide, RevsResult},
+};
+use crate::worker::gui_util::WorkspaceSession;
 use crate::worker::{WorkerSession, queries};
 use anyhow::Result;
 use assert_matches::assert_matches;
 use std::collections::HashSet;
+
+fn single(id: RevId) -> RevSet {
+    RevSet {
+        from: id.clone(),
+        to: id,
+    }
+}
+
+async fn file_diff(ws: &WorkspaceSession<'_>, set: RevSet, path: &TreePath) -> Result<FileDiff> {
+    queries::query_file_diff(ws, set, path.clone(), 3).await
+}
+
+fn rows_of(diff: &FileDiff, kind: DiffRowKind) -> Vec<&str> {
+    diff.hunks
+        .iter()
+        .flat_map(|h| &h.rows)
+        .filter(|r| r.kind == kind)
+        .map(|r| r.text.as_str())
+        .collect()
+}
 
 #[tokio::test]
 async fn log_all() -> Result<()> {
@@ -164,6 +188,7 @@ async fn revision_with_conflict() -> Result<()> {
     let ws = session.load_workspace(repo.path()).await?;
 
     let id = revs::conflict_bookmark();
+    let id_for_diff = id.clone();
     let result = queries::query_revisions(
         &ws,
         RevSet {
@@ -191,19 +216,16 @@ async fn revision_with_conflict() -> Result<()> {
     // The conflicts field should contain the conflict info from the final tree
     assert!(!conflicts.is_empty(), "Expected conflicts to be non-empty");
 
-    // The conflict hunks should show base as deletions and sides as additions
-    let conflict_lines: Vec<&str> = conflicts
-        .iter()
-        .flat_map(|c| c.hunks.iter().flat_map(|h| &h.lines.lines))
-        .map(|l| l.as_str())
-        .collect();
-
-    let has_removals = conflict_lines.iter().any(|l| l.starts_with('-'));
-    let has_additions = conflict_lines.iter().any(|l| l.starts_with('+'));
+    // the conflict diff should show base as deletions and sides as additions
+    let diff = file_diff(&ws, single(id_for_diff), &conflicts[0].path).await?;
+    assert_eq!(FileDiffKind::Conflict, diff.kind);
     assert!(
-        has_removals && has_additions,
-        "Expected base deletions and side additions in conflict hunks, got: {conflict_lines:?}"
+        !rows_of(&diff, DiffRowKind::Removed).is_empty()
+            && !rows_of(&diff, DiffRowKind::Added).is_empty(),
+        "Expected base deletions and side additions in conflict hunks, got: {:?}",
+        diff.hunks
     );
+    assert!(!rows_of(&diff, DiffRowKind::Marker).is_empty());
 
     Ok(())
 }
@@ -341,20 +363,19 @@ async fn revision_resolves_conflict() -> Result<()> {
     // Find the change for the file that had the conflict
     // The diff shows going FROM conflicted parent TO resolved commit
     // So the "before" side (parent tree) had conflict markers
-    let all_lines: String = changes
+    let change = changes
         .iter()
-        .flat_map(|c| &c.hunks)
-        .flat_map(|h| &h.lines.lines)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n");
+        .find(|c| c.path.repo_path.ends_with("b.txt"))
+        .expect("change to b.txt");
+    let diff = file_diff(&ws, single(revs::resolve_conflict()), &change.path).await?;
+    let removed = rows_of(&diff, DiffRowKind::Removed);
 
-    // The diff should show removal of conflict markers (as deleted lines with -)
-    // This verifies that format_tree_changes properly materialized the conflicted
-    // "before" tree with its labels
+    // the materialized conflicted "before" tree shows up as removed marker lines
     assert!(
-        all_lines.contains("-<<<<<<<") || all_lines.contains("->>>>>>>"),
-        "Expected removed conflict markers in diff (showing resolution), got:\n{all_lines}"
+        removed
+            .iter()
+            .any(|l| l.starts_with("<<<<<<<") || l.starts_with(">>>>>>>")),
+        "Expected removed conflict markers in diff (showing resolution), got:\n{removed:?}"
     );
 
     Ok(())
@@ -456,25 +477,18 @@ async fn merge_introduces_conflict() -> Result<()> {
     // The diff shows changes FROM parent TO merge commit
     // Since the parent wasn't conflicted, the "before" side should NOT have conflict markers
     // Only the "after" side (merge tree) has conflicts, which appear in the `conflicts` field
-    let all_change_lines: String = changes
-        .iter()
-        .flat_map(|c| &c.hunks)
-        .flat_map(|h| &h.lines.lines)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // The changes diff should NOT contain conflict markers in the "before" (deleted) lines
-    // because the parent trees weren't conflicted
-    let has_conflict_in_before = all_change_lines.contains("-<<<<<<<")
-        || all_change_lines.contains("->>>>>>>")
-        || all_change_lines.contains("-+++++++")
-        || all_change_lines.contains("--------");
-
-    assert!(
-        !has_conflict_in_before,
-        "Parent trees should not have conflict markers in diff:\n{all_change_lines}"
-    );
+    // the parent trees weren't conflicted, so no removed line can be a marker
+    for change in &changes {
+        let diff = file_diff(&ws, single(revs::conflict_bookmark()), &change.path).await?;
+        let removed = rows_of(&diff, DiffRowKind::Removed);
+        assert!(
+            !removed.iter().any(|l| l.starts_with("<<<<<<<")
+                || l.starts_with(">>>>>>>")
+                || l.starts_with("+++++++")
+                || l.starts_with("-------")),
+            "Parent trees should not have conflict markers in diff:\n{removed:?}"
+        );
+    }
 
     Ok(())
 }
@@ -523,18 +537,13 @@ async fn inherited_conflict_persists() -> Result<()> {
         "Expected conflicts to be non-empty for inherited conflict"
     );
 
-    // The conflict hunks should show base as deletions and sides as additions
-    let conflict_lines: Vec<&str> = conflicts
-        .iter()
-        .flat_map(|c| c.hunks.iter().flat_map(|h| &h.lines.lines))
-        .map(|l| l.as_str())
-        .collect();
-
-    let has_removals = conflict_lines.iter().any(|l| l.starts_with('-'));
-    let has_additions = conflict_lines.iter().any(|l| l.starts_with('+'));
+    let diff = file_diff(&ws, single(revs::inherited_conflict()), &conflicts[0].path).await?;
+    assert_eq!(FileDiffKind::Conflict, diff.kind);
     assert!(
-        has_removals && has_additions,
-        "Expected base deletions and side additions in inherited conflict, got: {conflict_lines:?}"
+        !rows_of(&diff, DiffRowKind::Removed).is_empty()
+            && !rows_of(&diff, DiffRowKind::Added).is_empty(),
+        "Expected base deletions and side additions in inherited conflict, got: {:?}",
+        diff.hunks
     );
 
     // There should be a change for the unrelated.txt file that was added
@@ -996,4 +1005,201 @@ mod revisions_immutability {
 
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn rename_reports_old_path() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    let result = queries::query_revisions(&ws, single(revs::main_bookmark())).await?;
+    let RevsResult::Detail { changes, .. } = result else {
+        panic!("Expected RevsResult::Detail");
+    };
+
+    let renamed = changes
+        .iter()
+        .find(|c| c.old_path.is_some())
+        .expect("a renamed change");
+    assert!(
+        renamed
+            .old_path
+            .as_ref()
+            .unwrap()
+            .repo_path
+            .ends_with("c.txt"),
+        "unexpected rename source {:?}",
+        renamed.old_path
+    );
+    assert!(
+        !changes
+            .iter()
+            .any(|c| c.old_path.is_none() && c.path.repo_path.ends_with("c.txt")),
+        "rename should not also be listed as a delete: {changes:?}"
+    );
+
+    let diff = file_diff(&ws, single(revs::main_bookmark()), &renamed.path).await?;
+    assert_eq!(
+        renamed.old_path.as_ref().map(|p| &p.repo_path),
+        diff.old_path.as_ref().map(|p| &p.repo_path)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn modified_file_rows_and_counts() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    let set = single(revs::hunk_child_single());
+    let result = queries::query_revisions(&ws, set.clone()).await?;
+    let RevsResult::Detail { changes, .. } = result else {
+        panic!("Expected RevsResult::Detail");
+    };
+    let change = changes
+        .iter()
+        .find(|c| c.path.repo_path.ends_with("hunk_test.txt"))
+        .expect("change to hunk_test.txt");
+    assert_eq!((1, 1), (change.added, change.removed));
+    assert!(!change.binary);
+
+    let diff = file_diff(&ws, set, &change.path).await?;
+    assert_eq!(FileDiffKind::Text, diff.kind);
+    assert_eq!(5, diff.old_line_count);
+    assert_eq!(5, diff.new_line_count);
+    assert_eq!(1, diff.hunks.len());
+
+    let rows = &diff.hunks[0].rows;
+    let removed = rows
+        .iter()
+        .find(|r| r.kind == DiffRowKind::Removed)
+        .unwrap();
+    let added = rows.iter().find(|r| r.kind == DiffRowKind::Added).unwrap();
+    assert_eq!(
+        ("line2", Some(2), None),
+        (removed.text.as_str(), removed.old_line, removed.new_line)
+    );
+    assert_eq!(
+        ("modified2", None, Some(2)),
+        (added.text.as_str(), added.old_line, added.new_line)
+    );
+
+    let context: Vec<_> = rows
+        .iter()
+        .filter(|r| r.kind == DiffRowKind::Context)
+        .map(|r| (r.old_line, r.new_line))
+        .collect();
+    assert!(context.contains(&(Some(1), Some(1))));
+    assert!(context.contains(&(Some(5), Some(5))));
+
+    // word-level tokens cover only the changed part of each line
+    for row in [removed, added] {
+        for token in &row.tokens {
+            assert!(token.start < token.end && token.end as usize <= row.text.len());
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn conflict_diff_has_blocks() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    // the merge's own diff is empty; b.txt is reported as an unchanged conflict
+    let set = single(revs::conflict_bookmark());
+    let result = queries::query_revisions(&ws, set.clone()).await?;
+    let RevsResult::Detail { conflicts, .. } = result else {
+        panic!("Expected RevsResult::Detail");
+    };
+    let conflict = conflicts
+        .iter()
+        .find(|c| c.path.repo_path.ends_with("b.txt"))
+        .unwrap_or_else(|| panic!("conflict in b.txt in {conflicts:?}"));
+
+    let diff = file_diff(&ws, set, &conflict.path).await?;
+    assert_eq!(FileDiffKind::Conflict, diff.kind);
+    let blocks = diff.conflict.expect("conflict blocks");
+    let (sides, bases) = blocks
+        .regions
+        .iter()
+        .find_map(|r| match r {
+            ConflictRegion::Conflict { sides, bases } => Some((sides, bases)),
+            ConflictRegion::Resolved { .. } => None,
+        })
+        .expect("a conflicted region");
+    assert_eq!(2, sides.len());
+    assert_eq!(1, bases.len());
+    assert!(sides.iter().all(|s| !s.label.is_empty()));
+
+    Ok(())
+}
+
+#[test]
+fn classify_contents_thresholds() {
+    assert_eq!(
+        FileDiffKind::Text,
+        queries::classify_contents(b"abc", b"abcd", 4)
+    );
+    assert_eq!(
+        FileDiffKind::TooLarge {
+            old_size: 3,
+            new_size: 5
+        },
+        queries::classify_contents(b"abc", b"abcde", 4)
+    );
+    assert_eq!(
+        FileDiffKind::Binary {
+            old_size: 3,
+            new_size: 3
+        },
+        queries::classify_contents(b"abc", b"a\0c", 4)
+    );
+    // binary wins over size so the placeholder says what the file is
+    assert_eq!(
+        FileDiffKind::Binary {
+            old_size: 0,
+            new_size: 6
+        },
+        queries::classify_contents(b"", b"\0abcde", 4)
+    );
+}
+
+#[tokio::test]
+async fn file_lines_are_clamped() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    let set = single(revs::hunk_child_single());
+    let path = TreePath {
+        repo_path: "hunk_test.txt".into(),
+        relative_path: "hunk_test.txt".into(),
+    };
+
+    let old =
+        queries::query_file_lines(&ws, set.clone(), path.clone(), FileSide::Old, 2, 3).await?;
+    assert_eq!(vec!["line2", "line3"], old);
+
+    let new =
+        queries::query_file_lines(&ws, set.clone(), path.clone(), FileSide::New, 0, 2).await?;
+    assert_eq!(vec!["line1", "modified2"], new);
+
+    let tail =
+        queries::query_file_lines(&ws, set.clone(), path.clone(), FileSide::New, 4, 99).await?;
+    assert_eq!(vec!["line4", "line5"], tail);
+
+    let empty = queries::query_file_lines(&ws, set, path, FileSide::New, 3, 2).await?;
+    assert!(empty.is_empty());
+
+    Ok(())
 }
