@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/write_config_table", post(write_config_table))
         .route("/write_config_entry", post(write_config_entry))
         .route("/delete_config_entry", post(delete_config_entry))
+        .route("/open_user_config", post(open_user_config))
 }
 
 #[derive(Deserialize)]
@@ -118,5 +119,16 @@ async fn delete_config_entry(
     }) {
         Ok(()) => StatusCode::OK,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+// the server runs on the user's machine, so the editor opens there too
+async fn open_user_config() -> StatusCode {
+    match crate::config::open_user_config() {
+        Ok(()) => StatusCode::OK,
+        Err(err) => {
+            log::warn!("open_user_config: {err:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     }
 }

@@ -823,6 +823,7 @@ impl WorkspaceSession<'_> {
 
         Ok(messages::RepoConfig::Workspace {
             absolute_path,
+            workspace_name: self.workspace.workspace_name().as_symbol().to_string(),
             git_remotes,
             query_choices,
             latest_query,

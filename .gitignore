@@ -35,3 +35,6 @@ dist-ssr
 # Agent config
 .claude/settings.local.json
 .mcp.json
+# vitest failure artifacts
+.vitest-attachments
+__screenshots__

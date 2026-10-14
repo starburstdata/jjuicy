@@ -25,7 +25,7 @@
     import Pane from "./shell/Pane.svelte";
     import Zone from "./objects/Zone.svelte";
     import StatusBar from "./shell/StatusBar.svelte";
-    import Toolbar from "./shell/Toolbar.svelte";
+    import Header from "./shell/Header.svelte";
     import ModalOverlay from "./shell/ModalOverlay.svelte";
     import ErrorDialog from "./shell/ErrorDialog.svelte";
 
@@ -301,7 +301,7 @@
 
 <Zone operand={{ type: "Repository" }} alwaysTarget let:target>
     <div id="shell">
-        <Toolbar config={$repoConfigEvent} />
+        <Header config={$repoConfigEvent} />
 
         {#if $repoConfigEvent.type == "Initial"}
             <Pane>
@@ -390,9 +390,9 @@
 
         display: grid;
         grid-template-columns: 1fr;
-        grid-template-rows: var(--ju-components-toolbarHeight) 1fr var(--ju-components-separatorWidth) 30px;
+        grid-template-rows: var(--ju-components-headerHeight) 1fr var(--ju-components-separatorWidth) 30px;
         grid-template-areas:
-            "toolbar"
+            "header"
             "content"
             "."
             "footer";

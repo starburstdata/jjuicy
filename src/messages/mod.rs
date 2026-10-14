@@ -216,6 +216,7 @@ pub enum RepoConfig {
     Initial,
     Workspace {
         absolute_path: DisplayPath,
+        workspace_name: String,
         git_remotes: Vec<String>,
         query_choices: HashMap<String, String>,
         latest_query: String,
