@@ -70,10 +70,12 @@ export function resizePair(
 
 export function gridTemplate(state: SplitState, minSizes: number[]): string {
     let parts: string[] = [];
+    // fr tracks summing below 1 leave the remainder empty, so normalize over what's visible
+    let total = state.sizes.reduce((sum, size, i) => (state.collapsed[i] ? sum : sum + size), 0) || 1;
     state.sizes.forEach((size, i) => {
         if (state.collapsed[i]) return;
         if (parts.length > 0) parts.push("var(--ju-components-separatorWidth)");
-        parts.push(`minmax(${minSizes[i] ?? 0}px, ${size}fr)`);
+        parts.push(`minmax(${minSizes[i] ?? 0}px, ${size / total}fr)`);
     });
     return parts.join(" ");
 }

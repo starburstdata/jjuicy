@@ -5,7 +5,7 @@
     import type { GitPush } from "../messages/GitPush";
     import type { RepoConfig } from "../messages/RepoConfig";
     import type { RepoStatus } from "../messages/RepoStatus";
-    import { currentMutation, hasModal, lastFocus, progressEvent, repoConfigEvent, repoStatusEvent, sidebarCollapsed } from "../stores";
+    import { currentMutation, hasModal, lastFocus, progressEvent, repoConfigEvent, repoStatusEvent, sidebarCollapsed, filesCollapsed } from "../stores";
     import WorkspaceMutator from "../mutators/WorkspaceMutator";
 
     export let config: RepoConfig;
@@ -123,6 +123,11 @@
                 tip={$sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
                 pressed={!$sidebarCollapsed}
                 onClick={() => ($sidebarCollapsed = !$sidebarCollapsed)} />
+            <ToolbarAction
+                icon="columns"
+                tip={$filesCollapsed ? "Show file list" : "Hide file list"}
+                pressed={!$filesCollapsed}
+                onClick={() => ($filesCollapsed = !$filesCollapsed)} />
             <ToolbarAction icon="refresh-cw" tip="Refresh (snapshot working copy)" busy={busy === "refresh"} onClick={onRefresh} />
         </div>
 

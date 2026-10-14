@@ -8,7 +8,7 @@
     import Pane from "./shell/Pane.svelte";
     import SetSpan from "./controls/SetSpan.svelte";
     import SplitView from "./shell/SplitView.svelte";
-    import { sidebarCollapsed } from "./stores";
+    import { filesCollapsed, sidebarCollapsed } from "./stores";
 
     let route = parseRoute();
 </script>
@@ -65,6 +65,7 @@
             <SplitView panes={[filesColumn, detailColumn]}
                        minSizes={[180, 320]}
                        initialSizes={[1, 3]}
+                       collapsed={[$filesCollapsed, false]}
                        storageKey="jjuicy.split.revision" />
         {:else}
             {#snippet logColumn()}
@@ -75,7 +76,7 @@
             <SplitView panes={[logColumn, filesColumn, detailColumn]}
                        minSizes={[240, 180, 320]}
                        initialSizes={[2, 1, 3]}
-                       collapsed={[$sidebarCollapsed, false, false]}
+                       collapsed={[$sidebarCollapsed, $filesCollapsed, false]}
                        storageKey="jjuicy.split.main" />
         {/if}
     {/key}
