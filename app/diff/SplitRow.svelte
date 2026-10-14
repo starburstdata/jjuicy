@@ -25,12 +25,12 @@
     <div class="row">
         <div class="side {leftClass}">
             <span class="gutter">{pair.left?.old_line ?? ""}</span>
-            {#if pair.left}<DiffCode text={pair.left.text} tokens={context ? [] : pair.left.tokens} syntax={syntax?.get(pair.left)} />{/if}
+            <span class="clip">{#if pair.left}<DiffCode text={pair.left.text} tokens={context ? [] : pair.left.tokens} syntax={syntax?.get(pair.left)} />{/if}</span>
         </div>
         <div class="side {rightClass}">
             {#if blame}<BlameCell blame={blame(pair.right?.new_line ?? null)} />{/if}
             <span class="gutter">{pair.right?.new_line ?? ""}</span>
-            {#if pair.right}<DiffCode text={pair.right.text} tokens={context ? [] : pair.right.tokens} syntax={syntax?.get(pair.right)} />{/if}
+            <span class="clip">{#if pair.right}<DiffCode text={pair.right.text} tokens={context ? [] : pair.right.tokens} syntax={syntax?.get(pair.right)} />{/if}</span>
         </div>
     </div>
 {/if}
@@ -87,5 +87,17 @@
             transparent 0 4px,
             color-mix(in srgb, var(--ju-colors-outline) 40%, transparent) 4px 5px
         );
+    }
+
+    /* gutters stay in place; the viewer's scrollbar moves only the code */
+    .clip {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .clip :global(.code) {
+        display: inline-block;
+        transform: translateX(calc(-1 * var(--scroll-x, 0px)));
     }
 </style>

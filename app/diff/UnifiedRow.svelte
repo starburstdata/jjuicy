@@ -18,7 +18,7 @@
     <span class="gutter">{row.old_line ?? ""}</span>
     <span class="gutter">{row.new_line ?? ""}</span>
     <span class="prefix">{row.kind == "Marker" ? "" : prefix}</span>
-    <DiffCode text={row.text} tokens={row.tokens} {syntax} />
+    <span class="clip"><DiffCode text={row.text} tokens={row.tokens} {syntax} /></span>
 </div>
 
 <style>
@@ -26,6 +26,7 @@
         height: var(--row-height);
         line-height: var(--row-height);
         display: flex;
+        overflow: hidden;
         white-space: pre;
     }
 
@@ -67,5 +68,17 @@
     .marker {
         color: var(--ju-colors-foregroundMuted);
         font-style: italic;
+    }
+
+    /* gutters stay in place; the viewer's scrollbar moves only the code */
+    .clip {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .clip :global(.code) {
+        display: inline-block;
+        transform: translateX(calc(-1 * var(--scroll-x, 0px)));
     }
 </style>

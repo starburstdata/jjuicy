@@ -49,6 +49,9 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   headers are `HunkObject`s, so hunks drag onto revisions like files do. "All files" stacks a
   viewer per file and loads each as it scrolls into view. Highlighting (Lezer) runs over each
   hunk's whole old/new text and is sliced per line, so multi-line tokens colour correctly.
+  Long lines scroll horizontally through a sticky bar at the bottom of the viewer, which shifts
+  only the code (`--scroll-x`); gutters and blame stay pinned, and in split mode both sides move
+  together. The native scrollbar would sit below a tall diff, out of view.
 - A file's history is just a revset (`files(root-file:"...")`, `app/mutators/ChangeMutator.ts`)
   pushed through `logQueryRequest`, so it gets the log's paging and actions for free.
 - Single revisions have a History tab (`app/detail/EvologView.svelte`) listing the change's
