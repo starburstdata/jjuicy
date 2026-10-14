@@ -7,14 +7,13 @@
     import type { RepoStatus } from "../messages/RepoStatus";
     import { currentMutation, hasModal, lastFocus, progressEvent, repoConfigEvent, repoStatusEvent, sidebarCollapsed, filesCollapsed } from "../stores";
     import WorkspaceMutator from "../mutators/WorkspaceMutator";
+    import Icon from "../controls/Icon.svelte";
+    import { macOverlay, TITLE_ROW_HEIGHT } from "./chrome";
 
     export let config: RepoConfig;
 
     let busy: "push" | "fetch" | "refresh" | null = null;
     let recentWorkspaces: string[] = [];
-
-    // the overlay title bar puts the traffic lights over our left edge
-    let macOverlay = isTauri() && navigator.userAgent.includes("Mac");
 
     $: workspace = config.type === "Workspace" ? config : null;
     $: remotes = workspace?.git_remotes ?? [];
@@ -85,93 +84,128 @@
     $: if (workspace) loadRecent();
 </script>
 
-<header class="header" class:mac-overlay={macOverlay} inert={$hasModal} data-tauri-drag-region>
-    {#if workspace}
-        {#snippet pushRemotes({ close }: { close: () => void })}
-            {#each remotes as remote}
-                <button on:click={() => { run("push", remote); close(); }}>Push to {remote}</button>
-            {/each}
-        {/snippet}
-
-        {#snippet fetchRemotes({ close }: { close: () => void })}
-            {#each remotes as remote}
-                <button on:click={() => { run("fetch", remote); close(); }}>Fetch from {remote}</button>
-            {/each}
-        {/snippet}
-
-        {#snippet workspaceMenu({ close }: { close: () => void })}
-            <span class="menu-heading">Workspace {workspace?.workspace_name}</span>
-            <button on:click={() => { close(); new WorkspaceMutator(workspace?.workspace_name ?? "").onRename(); }}>
-                Rename workspace...
-            </button>
-            {#if recentWorkspaces.length > 0}
-                <hr />
-                <span class="menu-heading">Recent</span>
-                {#each recentWorkspaces as path}
-                    <button title={path} on:click={() => { close(); openWorkspace(path); }}>{path}</button>
-                {/each}
-            {/if}
-            {#if isTauri()}
-                <hr />
-                <button on:click={() => { close(); openOther(); }}>Open repository...</button>
-            {/if}
-        {/snippet}
-
-        <div class="group">
-            <ToolbarAction
-                icon="sidebar"
-                tip={$sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-                pressed={!$sidebarCollapsed}
-                onClick={() => ($sidebarCollapsed = !$sidebarCollapsed)} />
-            <ToolbarAction
-                icon="columns"
-                tip={$filesCollapsed ? "Show file list" : "Hide file list"}
-                pressed={!$filesCollapsed}
-                onClick={() => ($filesCollapsed = !$filesCollapsed)} />
-            <ToolbarAction icon="refresh-cw" tip="Refresh (snapshot working copy)" busy={busy === "refresh"} onClick={onRefresh} />
-        </div>
-
-        <nav class="breadcrumb" aria-label="workspace">
-            <ToolbarAction icon="folder" label={repoName} tip={workspace.absolute_path} dropdown={workspaceMenu} />
-            {#if workspace.workspace_name !== "default"}
-                <span class="crumb-separator">/</span>
-                <span class="crumb">{workspace.workspace_name}</span>
-            {/if}
-        </nav>
-
-        <div class="spacer" data-tauri-drag-region></div>
-
-        <div class="group">
-            {#if remotes.length > 0}
-                <ToolbarAction
-                    icon="download-cloud"
-                    label="Fetch"
-                    tip="Fetch from {defaultRemote}"
-                    busy={busy === "fetch"}
-                    disabled={busy !== null}
-                    onClick={() => run("fetch", defaultRemote)}
-                    dropdown={remotes.length > 1 ? fetchRemotes : undefined} />
-                <ToolbarAction
-                    icon="upload-cloud"
-                    label="Push"
-                    tip="Push to {defaultRemote}"
-                    busy={busy === "push"}
-                    disabled={busy !== null}
-                    onClick={() => run("push", defaultRemote)}
-                    dropdown={remotes.length > 1 ? pushRemotes : undefined} />
-            {/if}
-        </div>
-
-        <div class="group">
-            {#if isTauri()}
-                <ToolbarAction
-                    icon="terminal"
-                    tip="Open terminal here"
-                    onClick={() => trigger("open_terminal", { path: workspace?.absolute_path })} />
-            {/if}
-            <ToolbarAction icon="settings" tip="Edit settings (jj user config)" onClick={() => trigger("open_user_config")} />
-        </div>
+<header
+    class="header"
+    class:mac-overlay={macOverlay}
+    style="--title-row-height: {TITLE_ROW_HEIGHT}px"
+    inert={$hasModal}
+    data-tauri-drag-region="deep">
+    {#if macOverlay}
+        <div class="title-row">{repoName || "jjuicy"}</div>
     {/if}
+    <div class="toolbar">
+        {#if workspace}
+            {#snippet pushRemotes({ close }: { close: () => void })}
+                <span class="menu-heading">Push to</span>
+                {#each remotes as remote}
+                    <button on:click={() => { run("push", remote); close(); }}>
+                        <Icon name="upload-cloud" /><span class="text">{remote}</span>
+                    </button>
+                {/each}
+            {/snippet}
+
+            {#snippet fetchRemotes({ close }: { close: () => void })}
+                <span class="menu-heading">Fetch from</span>
+                {#each remotes as remote}
+                    <button on:click={() => { run("fetch", remote); close(); }}>
+                        <Icon name="download-cloud" /><span class="text">{remote}</span>
+                    </button>
+                {/each}
+            {/snippet}
+
+            {#snippet workspaceMenu({ close }: { close: () => void })}
+                <span class="menu-heading">Workspace {workspace?.workspace_name}</span>
+                <button on:click={() => { close(); new WorkspaceMutator(workspace?.workspace_name ?? "").onRename(); }}>
+                    <Icon name="edit-2" /><span class="text">Rename workspace...</span>
+                </button>
+                {#if recentWorkspaces.length > 0}
+                    <hr />
+                    <span class="menu-heading">Recent</span>
+                    {#each recentWorkspaces as path}
+                        <button title={path} on:click={() => { close(); openWorkspace(path); }}>
+                            <Icon name="folder" /><span class="text">{path}</span>
+                        </button>
+                    {/each}
+                {/if}
+                {#if isTauri()}
+                    <hr />
+                    <button on:click={() => { close(); openOther(); }}>
+                        <Icon name="folder-plus" /><span class="text">Open repository...</span>
+                    </button>
+                {/if}
+            {/snippet}
+
+            {#snippet workspacePill()}
+                <span class="repo-name">{repoName}</span>
+                {#if workspace?.workspace_name !== "default"}
+                    <span class="crumb-separator">/</span>
+                    <span class="crumb">{workspace?.workspace_name}</span>
+                {/if}
+            {/snippet}
+
+            <div class="group">
+                <ToolbarAction
+                    stacked
+                    icon="sidebar"
+                    label="Sidebar"
+                    tip={$sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+                    pressed={!$sidebarCollapsed}
+                    onClick={() => ($sidebarCollapsed = !$sidebarCollapsed)} />
+                <ToolbarAction
+                    stacked
+                    icon="columns"
+                    label="Files"
+                    tip={$filesCollapsed ? "Show file list" : "Hide file list"}
+                    pressed={!$filesCollapsed}
+                    onClick={() => ($filesCollapsed = !$filesCollapsed)} />
+                <nav class="breadcrumb" aria-label="workspace">
+                    <ToolbarAction
+                        stacked
+                        icon="folder"
+                        label="Workspace"
+                        tip={workspace.absolute_path}
+                        pill={workspacePill}
+                        dropdown={workspaceMenu} />
+                </nav>
+            </div>
+
+            <div class="group">
+                <ToolbarAction stacked icon="refresh-cw" label="Refresh" tip="Refresh (snapshot working copy)" busy={busy === "refresh"} onClick={onRefresh} />
+                {#if remotes.length > 0}
+                    <ToolbarAction
+                        stacked
+                        icon="download-cloud"
+                        label="Fetch"
+                        tip="Fetch from {defaultRemote}"
+                        busy={busy === "fetch"}
+                        disabled={busy !== null}
+                        onClick={() => run("fetch", defaultRemote)}
+                        dropdown={remotes.length > 1 ? fetchRemotes : undefined} />
+                    <ToolbarAction
+                        stacked
+                        icon="upload-cloud"
+                        label="Push"
+                        tip="Push to {defaultRemote}"
+                        busy={busy === "push"}
+                        disabled={busy !== null}
+                        onClick={() => run("push", defaultRemote)}
+                        dropdown={remotes.length > 1 ? pushRemotes : undefined} />
+                {/if}
+            </div>
+
+            <div class="group">
+                {#if isTauri()}
+                    <ToolbarAction
+                        stacked
+                        icon="terminal"
+                        label="Terminal"
+                        tip="Open terminal here"
+                        onClick={() => trigger("open_terminal", { path: workspace?.absolute_path })} />
+                {/if}
+                <ToolbarAction stacked icon="settings" label="Settings" tip="Edit settings (jj user config)" onClick={() => trigger("open_user_config")} />
+            </div>
+        {/if}
+    </div>
 
     {#if showProgress}
         <div
@@ -192,36 +226,58 @@
     .header {
         grid-area: header;
         position: relative;
+        /* the shell is pointer-transparent; the header must be hit for the drag region to see clicks */
+        pointer-events: auto;
         display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 0 8px;
+        flex-direction: column;
         background: var(--ju-colors-surfaceDeep);
-        border-bottom: 1px solid var(--ju-colors-surfaceAlt);
+        border-bottom: 1px solid var(--ju-colors-surfaceStrong);
         font-family: var(--ju-text-familyUi);
         min-width: 0;
     }
 
-    .header.mac-overlay {
-        padding-left: 78px;
+    .title-row {
+        flex: none;
+        height: var(--title-row-height);
+        line-height: var(--title-row-height);
+        /* clear of the traffic lights on both sides so the title stays centred */
+        padding: 0 78px;
+        text-align: center;
+        font-size: var(--ju-text-sizeMd);
+        font-weight: var(--ju-text-weightHeavy);
+        color: var(--ju-colors-foreground);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .toolbar {
+        flex: 1;
+        display: flex;
+        align-items: stretch;
+        gap: 16px;
+        padding: 0 10px;
+        min-width: 0;
     }
 
     .group {
         display: flex;
-        align-items: center;
-        gap: 2px;
+        align-items: stretch;
+        gap: 4px;
+        min-width: 0;
     }
 
     .breadcrumb {
         display: flex;
-        align-items: center;
-        gap: 4px;
+        align-items: stretch;
         min-width: 0;
-        font-size: var(--ju-text-sizeMd);
+        margin-left: 8px;
     }
 
-    .breadcrumb :global(.body .label) {
-        font-weight: 600;
+    .repo-name {
+        font-weight: var(--ju-text-weightMedium);
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .crumb-separator {
@@ -230,14 +286,8 @@
 
     .crumb {
         color: var(--ju-colors-foregroundMuted);
-        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-
-    .spacer {
-        flex: 1;
-        align-self: stretch;
     }
 
     .progress {
