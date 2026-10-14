@@ -28,6 +28,7 @@ use jj_lib::{
         ContentDiff, DiffHunk, DiffHunkKind, find_line_ranges,
     },
     diff_presentation::LineCompareMode,
+    evolution,
     files::{self, FileMergeHunkLevel, MergeResult},
     git::REMOTE_NAME_FOR_LOCAL_GIT_REPO,
     graph::{GraphEdge, GraphEdgeType, TopoGroupedGraphIterator},
@@ -45,12 +46,10 @@ use jj_lib::{
 };
 
 use crate::config::JjuicySettings;
-use crate::messages::RevHeader;
-#[cfg(test)]
-use crate::messages::RevId;
 use crate::messages::{
     ChangeHunk, ChangeLocation, ChangeRange, MultilineString, RevSet, TreePath, queries::*,
 };
+use crate::messages::{RevHeader, RevId};
 
 use super::{WorkspaceSession, git_util::get_git_remote_names};
 
@@ -745,6 +744,21 @@ pub fn query_op_log(ws: &WorkspaceSession, limit: u32, offset: u32) -> Result<Ve
         .map(|op| {
             let op = op?;
             OpLogEntry::new(&op, op.id() == current.id())
+        })
+        .collect()
+}
+
+pub fn query_evolog(ws: &WorkspaceSession, id: &RevId) -> Result<Vec<EvologEntry>> {
+    let Some(commit) = ws.resolve_optional_id(id)? else {
+        return Ok(Vec::new());
+    };
+    evolution::walk_predecessors(ws.repo(), slice::from_ref(commit.id()))
+        .map(|entry| {
+            let entry = entry?;
+            Ok(EvologEntry {
+                commit: ws.format_header(&entry.commit, None)?,
+                operation: entry.operation.map(|op| op.metadata().description.clone()),
+            })
         })
         .collect()
 }

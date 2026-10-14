@@ -51,6 +51,9 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   hunk's whole old/new text and is sliced per line, so multi-line tokens colour correctly.
 - A file's history is just a revset (`files(root-file:"...")`, `app/mutators/ChangeMutator.ts`)
   pushed through `logQueryRequest`, so it gets the log's paging and actions for free.
+- Single revisions have a History tab (`app/detail/EvologView.svelte`) listing the change's
+  evolog; each version diffs against its own parents, and restoring one rewrites the change's
+  tree in place, keeping its description and parents.
 - The files column mounts long lists in chunks over several frames, to keep selection→paint
   inside the budget; `app/perf.ts` records those timings as `performance.measure` entries.
 - Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to

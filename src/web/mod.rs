@@ -47,8 +47,8 @@ use crate::messages::mutations::{
     CreateRef, CreateRevision, CreateRevisionBetween, DeleteRef, DeleteRefs, DescribeRevision,
     DuplicateRevisions, ExternalDiff, ExternalResolve, ForgetWorkspace, GitFetch, GitPush,
     InsertRevisions, MoveChanges, MoveHunk, MoveRef, MoveRevisions, MutationOptions,
-    RenameBookmark, RenameWorkspace, ResolveConflictSide, RestoreOperation, TrackBookmark,
-    UndoOperation, UntrackBookmark,
+    RenameBookmark, RenameWorkspace, ResolveConflictSide, RestoreFromEvolog, RestoreOperation,
+    TrackBookmark, UndoOperation, UntrackBookmark,
 };
 use crate::worker::{Mutation, Session, SessionEvent, WorkerSession};
 use sink::{SseEvent, SseSink};
@@ -336,6 +336,7 @@ async fn handle_mutate(
         "forget_workspace" => execute_mutation::<ForgetWorkspace>(&state, body),
         "rename_workspace" => execute_mutation::<RenameWorkspace>(&state, body),
         "restore_operation" => execute_mutation::<RestoreOperation>(&state, body),
+        "restore_from_evolog" => execute_mutation::<RestoreFromEvolog>(&state, body),
         "undo_operation" => {
             let (tx, rx) = channel();
             state.worker_tx.send(SessionEvent::ExecuteMutation {

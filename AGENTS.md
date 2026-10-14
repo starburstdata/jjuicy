@@ -165,6 +165,7 @@ Use `let` instead of `const` for variable declarations.
 - `app/Shell.svelte` - Window layout: header, SplitView panes, status bar (`app/shell/`)
 - `app/detail/DetailPane.svelte` - Revision detail: header, actions, parents, changes (`app/detail/`)
 - `app/diff/DiffViewer.svelte` - Per-file diff: unified/split rows, context expansion, conflicts, highlighting (`app/diff/`)
+- `app/detail/EvologView.svelte` - History tab: evolog versions, diff and restore
 - `app/log/BookmarkSection.svelte` - Bookmark list in the log column, ahead/behind badges, cleanup
 - `app/oplog/OpLogPanel.svelte` - Operation log slide-over: view at op (read-only), restore
 - `app/perf.ts` - selection→paint `performance.measure` marks

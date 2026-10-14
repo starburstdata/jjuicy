@@ -220,4 +220,55 @@ describe("DetailPane", () => {
 
         await vi.waitFor(() => expect(container.textContent).toContain("Binary file (10 → 20 bytes)"));
     });
+
+    it("lists versions in the history tab and restores one", async () => {
+        let current = mkHeader();
+        let old = mkHeader({
+            id: { ...mkId("abc123def456", "0ld0ld0ld0ld"), change: { ...mkId("abc123def456", "").change, offset: 1 } },
+            description: { lines: ["older message"] },
+        });
+        setupMocks((cmd, args) => {
+            calls.push({ cmd, args });
+            if (cmd == "query_evolog") {
+                return [
+                    { commit: current, operation: "describe commit" },
+                    { commit: old, operation: "snapshot working copy" },
+                ];
+            }
+            if (cmd == "query_revisions") {
+                return { ...mkRevs((args as any).set.from.commit.hex == old.id.commit.hex ? old : current), changes: [] };
+            }
+            return { type: "Unchanged" };
+        });
+        let { default: DetailPane } = await import("./DetailPane.svelte");
+        let { container } = render(DetailPane, { props: { revs: mkRevs(current) } });
+
+        await fireEvent.click(button(container, "History")!);
+        await vi.waitFor(() => expect(container.querySelectorAll(".versions li").length).toBe(2));
+        expect(container.textContent).toContain("snapshot working copy");
+        expect(calls.find((c) => c.cmd == "query_evolog")!.args.id).toEqual(current.id);
+
+        await fireEvent.click(container.querySelectorAll<HTMLButtonElement>(".versions .version")[1]);
+        await vi.waitFor(() =>
+            expect(calls.some((c) => c.cmd == "query_revisions" && c.args.set.from.change.offset == 1)).toBe(true),
+        );
+
+        // only older versions can be restored
+        let restores = container.querySelectorAll<HTMLButtonElement>(".versions .restore");
+        expect(restores.length).toBe(1);
+        await fireEvent.click(restores[0]);
+        await vi.waitFor(() => expect(calls.some((c) => c.cmd == "restore_from_evolog")).toBe(true));
+        let mutation = calls.find((c) => c.cmd == "restore_from_evolog")!.args.mutation;
+        expect(mutation.id).toEqual(current.id);
+        expect(mutation.from.hex).toBe(old.id.commit.hex);
+    });
+
+    it("has no history tab for ranges", async () => {
+        let revs = mkRevs();
+        revs.set = { from: mkId("par123par123", "feedface0000"), to: revs.set.to };
+        let { default: DetailPane } = await import("./DetailPane.svelte");
+        let { container } = render(DetailPane, { props: { revs } });
+
+        expect(button(container, "History")).toBeUndefined();
+    });
 });
