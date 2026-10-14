@@ -4,7 +4,7 @@
 //! containing `colors`, `text`, `shadows`, and `components` tables. Values
 //! in later sections can reference earlier ones with `$section.key` syntax
 //! (e.g. `$colors.primary`), resolved at load time. Tokens a theme omits
-//! are inherited from the bundled default theme.
+//! are inherited from the default (macOS) theme.
 
 #[cfg(all(test, not(feature = "ts-rs")))]
 mod tests;
@@ -17,7 +17,7 @@ use log::warn;
 
 const SECTIONS: &[&str] = &["colors", "syntax", "text", "shadows", "components"];
 
-const DEFAULT_THEME: &str = include_str!("../../res/themes/default.toml");
+const DEFAULT_THEME: &str = include_str!("../../res/themes/macos.toml");
 
 /// Resolved theme tokens for one variant (light or dark), keyed by
 /// `"section-tokenName"` → CSS value.
@@ -64,8 +64,7 @@ pub fn default_theme() -> Theme {
 }
 
 const BUNDLED_THEMES: &[(&str, &str)] = &[
-    ("default.toml", DEFAULT_THEME),
-    ("macos.toml", include_str!("../../res/themes/macos.toml")),
+    ("macos.toml", DEFAULT_THEME),
     (
         "material.toml",
         include_str!("../../res/themes/material.toml"),

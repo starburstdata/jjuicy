@@ -6,11 +6,11 @@ fn parse_default_theme() {
     // light variant has expected tokens
     assert_eq!(
         theme.light.get("colors-primary"),
-        Some(&"#1e66f5".to_string())
+        Some(&"#007AFF".to_string())
     );
     assert_eq!(
         theme.light.get("colors-background"),
-        Some(&"#eff1f5".to_string())
+        Some(&"#ffffff".to_string())
     );
     assert!(theme.light.contains_key("text-familyUi"));
     assert!(theme.light.contains_key("shadows-shadowSm"));
@@ -19,7 +19,7 @@ fn parse_default_theme() {
     // dark variant has expected tokens
     assert_eq!(
         theme.dark.get("colors-primary"),
-        Some(&"#89b4fa".to_string())
+        Some(&"#0A84FF".to_string())
     );
     assert!(theme.dark.contains_key("components-buttonBackground"));
 }
@@ -42,10 +42,10 @@ fn resolve_references() {
 #[test]
 fn resolve_cross_section_refs() {
     let theme = default_theme();
-    // components.buttonShadow references shadows.shadowSm
+    // components.dialogShadow references shadows.shadowLg
     assert_eq!(
-        theme.light.get("components-buttonShadow"),
-        theme.light.get("shadows-shadowSm"),
+        theme.light.get("components-dialogShadow"),
+        theme.light.get("shadows-shadowLg"),
     );
     // components.buttonFont references text.familyUi
     assert_eq!(
