@@ -1285,3 +1285,39 @@ async fn bookmarks_sync_state() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn annotate_attributes_lines_to_origins() -> Result<()> {
+    let repo = mkrepo();
+
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    let path = TreePath {
+        repo_path: "hunk_test.txt".into(),
+        relative_path: "hunk_test.txt".into(),
+    };
+    let annotation = queries::query_annotate(&ws, &revs::hunk_grandchild(), &path)?;
+
+    let origins: Vec<&str> = annotation
+        .lines
+        .iter()
+        .map(|i| annotation.origins[*i as usize].id.commit.hex.as_str())
+        .collect();
+    let base = revs::hunk_base().commit.hex;
+    let child = revs::hunk_child_single().commit.hex;
+    let grandchild = revs::hunk_grandchild().commit.hex;
+    assert_eq!(
+        vec![
+            base.as_str(),
+            child.as_str(),
+            grandchild.as_str(),
+            base.as_str(),
+            base.as_str()
+        ],
+        origins
+    );
+    assert_eq!(3, annotation.origins.len());
+
+    Ok(())
+}

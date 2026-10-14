@@ -3,9 +3,12 @@
     import type { DiffRow } from "../messages/DiffRow";
     import type { SyntaxSpan } from "./highlight";
     import DiffCode from "./DiffCode.svelte";
+    import BlameCell from "./BlameCell.svelte";
+    import type { BlameLookup } from "./annotate";
 
     export let pair: RowPair;
     export let syntax: Map<DiffRow, SyntaxSpan[]> | null = null;
+    export let blame: BlameLookup | null = null;
 
     $: marker = pair.left?.kind == "Marker";
     $: context = pair.left != null && pair.left === pair.right;
@@ -25,6 +28,7 @@
             {#if pair.left}<DiffCode text={pair.left.text} tokens={context ? [] : pair.left.tokens} syntax={syntax?.get(pair.left)} />{/if}
         </div>
         <div class="side {rightClass}">
+            {#if blame}<BlameCell blame={blame(pair.right?.new_line ?? null)} />{/if}
             <span class="gutter">{pair.right?.new_line ?? ""}</span>
             {#if pair.right}<DiffCode text={pair.right.text} tokens={context ? [] : pair.right.tokens} syntax={syntax?.get(pair.right)} />{/if}
         </div>

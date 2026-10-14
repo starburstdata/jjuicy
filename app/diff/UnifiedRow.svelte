@@ -2,15 +2,19 @@
     import type { DiffRow } from "../messages/DiffRow";
     import type { SyntaxSpan } from "./highlight";
     import DiffCode from "./DiffCode.svelte";
+    import BlameCell from "./BlameCell.svelte";
+    import type { BlameLookup } from "./annotate";
 
     export let row: DiffRow;
     export let syntax: SyntaxSpan[] | undefined = undefined;
+    export let blame: BlameLookup | null = null;
 
     $: cls = row.kind == "Added" ? "add" : row.kind == "Removed" ? "remove" : row.kind == "Marker" ? "marker" : "context";
     $: prefix = row.kind == "Added" ? "+" : row.kind == "Removed" ? "−" : " ";
 </script>
 
 <div class="row {cls}">
+    {#if blame}<BlameCell blame={blame(row.new_line)} />{/if}
     <span class="gutter">{row.old_line ?? ""}</span>
     <span class="gutter">{row.new_line ?? ""}</span>
     <span class="prefix">{row.kind == "Marker" ? "" : prefix}</span>

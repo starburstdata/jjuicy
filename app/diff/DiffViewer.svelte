@@ -6,7 +6,7 @@
     import type { FileDiff } from "../messages/FileDiff";
     import HunkObject from "../objects/HunkObject.svelte";
     import { query } from "../ipc";
-    import { diffMode } from "../stores";
+    import { annotateOn, diffMode } from "../stores";
     import { diffCache, diffKey } from "./cache";
     import { computeGaps } from "./gaps";
     import { buildItems, expandReveal, maxColumns, revealRanges, type Reveal } from "./items";
@@ -19,6 +19,8 @@
     import type { Parser } from "@lezer/common";
     import type { DiffRow } from "../messages/DiffRow";
     import { beginMeasure, endMeasure } from "../perf";
+    import type { FileAnnotation } from "../messages/FileAnnotation";
+    import { annotationCache, annotationKey, blameLookup } from "./annotate";
 
     export let set: RevSet;
     export let change: RevChangeSummary;
@@ -33,6 +35,7 @@
     const OVERSCAN = 40;
     const LAZY_MARGIN = "600px";
     const ESTIMATE_MAX_ROWS = 200;
+    const BLAME_WIDTH = "22ch";
 
     let diff: FileDiff | null = null;
     let error: string | null = null;
@@ -75,14 +78,44 @@
         if (!lazy) endMeasure("select-file");
     }
 
+    // annotation is per revision, so ranges (header == null) have nothing to attribute lines to
+    let annotation: FileAnnotation | null = null;
+    $: annotatable = $annotateOn && header != null && diff?.kind.type == "Text" && diff.hunks.length > 0;
+    $: loadAnnotation(annotatable ? header : null, change);
+
+    async function loadAnnotation(forHeader: RevHeader | null, forChange: RevChangeSummary) {
+        if (!forHeader || forChange.kind == "Deleted") {
+            annotation = null;
+            return;
+        }
+        let key = annotationKey(forHeader.id.commit.hex, forChange.path.repo_path);
+        let cached = annotationCache.get(key);
+        if (cached) {
+            annotation = cached;
+            return;
+        }
+        let result = await query<FileAnnotation>("query_annotate", { id: forHeader.id, path: forChange.path });
+        if (forHeader != header || forChange != change) return;
+        if (result.type == "data") {
+            annotationCache.set(key, result.value);
+            annotation = result.value;
+        } else {
+            annotation = null;
+            error = result.message;
+        }
+    }
+
+    $: blame = annotatable ? blameLookup(annotation) : null;
+
     $: gaps = diff ? computeGaps(diff.hunks, diff.new_line_count) : [];
     $: items = diff ? buildItems(diff.hunks, gaps, reveals, lines, $diffMode) : [];
     $: digits = String(Math.max(diff?.old_line_count ?? 0, diff?.new_line_count ?? 0, 1)).length;
     $: columns = maxColumns(items);
+    $: blameWidth = blame ? BLAME_WIDTH : "0px";
     $: minWidth =
         $diffMode == "unified"
-            ? `calc(2 * (${digits}ch + 6px) + ${columns + 3}ch)`
-            : `calc(2 * (${digits}ch + 6px + ${columns + 2}ch))`;
+            ? `calc(${blameWidth} + 2 * (${digits}ch + 6px) + ${columns + 3}ch)`
+            : `calc(${blameWidth} + 2 * (${digits}ch + 6px + ${columns + 2}ch))`;
 
     async function onExpand(index: number, all: boolean) {
         let gap = gaps[index];
@@ -215,7 +248,7 @@
         <div class="scroll">
             <div
                 class="diff {$diffMode}"
-                style="--row-height: {ITEM_HEIGHT}px; --separator-height: {ITEM_HEIGHT}px; --gutter-width: calc({digits}ch + 6px); min-width: {minWidth}; height: {items.length *
+                style="--row-height: {ITEM_HEIGHT}px; --separator-height: {ITEM_HEIGHT}px; --gutter-width: calc({digits}ch + 6px); --blame-width: {BLAME_WIDTH}; min-width: {minWidth}; height: {items.length *
                     ITEM_HEIGHT}px">
                 <div class="window" style="transform: translateY({first * ITEM_HEIGHT}px)">
                     {#each visible as item, i (i)}
@@ -233,9 +266,9 @@
                                 trailing={item.trailing}
                                 on:expand={(e) => item.type == "gap" && onExpand(item.index, e.detail.all)} />
                         {:else if item.type == "row"}
-                            <UnifiedRow row={item.row} syntax={syntax?.get(item.row)} />
+                            <UnifiedRow row={item.row} syntax={syntax?.get(item.row)} {blame} />
                         {:else}
-                            <SplitRow pair={item.pair} {syntax} />
+                            <SplitRow pair={item.pair} {syntax} {blame} />
                         {/if}
                     {/each}
                 </div>

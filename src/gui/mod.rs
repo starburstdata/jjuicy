@@ -202,6 +202,7 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             query_bookmarks,
             query_op_log,
             query_evolog,
+            query_annotate,
             view_operation,
             query_snapshot,
             open_terminal,
@@ -645,6 +646,29 @@ fn query_op_log(
             tx: call_tx,
             limit,
             offset,
+        })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
+fn query_annotate(
+    window: Window,
+    app_state: State<AppState>,
+    id: messages::RevId,
+    path: messages::TreePath,
+) -> Result<messages::queries::FileAnnotation, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::QueryAnnotate {
+            tx: call_tx,
+            id,
+            path,
         })
         .map_err(InvokeError::from_error)?;
     call_rx

@@ -111,6 +111,12 @@ pub enum SessionEvent {
         tx: Sender<Result<Vec<messages::queries::EvologEntry>>>,
         id: messages::RevId,
     },
+    /// Which revision introduced each line of a file.
+    QueryAnnotate {
+        tx: Sender<Result<messages::queries::FileAnnotation>>,
+        id: messages::RevId,
+        path: messages::TreePath,
+    },
     /// View the repo read-only as of a past operation, or return to the head with `None`.
     ViewOperation {
         tx: Sender<Result<messages::RepoStatus>>,
@@ -348,6 +354,9 @@ impl Session for WorkspaceSession<'_> {
                 }
                 SessionEvent::QueryEvolog { tx, id } => {
                     tx.send(queries::query_evolog(&self, &id))?
+                }
+                SessionEvent::QueryAnnotate { tx, id, path } => {
+                    tx.send(queries::query_annotate(&self, &id, &path))?
                 }
                 SessionEvent::QueryLog {
                     tx,
@@ -627,6 +636,9 @@ impl Session for QuerySession<'_, '_> {
                 }
                 Ok(SessionEvent::QueryEvolog { tx, id }) => {
                     tx.send(queries::query_evolog(self.ws, &id))?
+                }
+                Ok(SessionEvent::QueryAnnotate { tx, id, path }) => {
+                    tx.send(queries::query_annotate(self.ws, &id, &path))?
                 }
                 Ok(SessionEvent::QueryLogNextPage { tx }) => tx.send(self.get_page())?,
                 Ok(unhandled) => return Ok(QueryResult(unhandled, self.state)),

@@ -58,4 +58,26 @@ describe("file history", () => {
         await page.locator('[role="tab"]', { hasText: "Changes" }).click();
         await expect.poll(() => page.locator(".changes-header .no-changes").count(), { timeout: 10000 }).toBe(1);
     });
+
+    it("annotates lines and jumps to the change that introduced them", async () => {
+        await ctx.page.goto(serverUrl);
+        let page = ctx.page;
+
+        await page.locator('.log-entry button[aria-label^="create c.txt and change a.txt"]').first().click();
+        let file = page.locator('button[aria-label="a.txt"]').first();
+        await file.waitFor({ timeout: 20000 });
+        await file.click();
+        await page.locator('button[title^="annotate lines"]').first().click();
+
+        let blames = page.locator("button.blame");
+        await expect.poll(() => blames.count(), { timeout: 10000 }).toBeGreaterThan(0);
+        let labels = await blames.evaluateAll((els) => els.map((e) => e.getAttribute("title") ?? ""));
+        let older = labels.findIndex((l) => !/create c\.txt and change a\.txt/.test(l));
+        expect(older).toBeGreaterThanOrEqual(0);
+
+        await blames.nth(older).click();
+        await expect
+            .poll(() => page.locator("h2.title").first().textContent(), { timeout: 10000 })
+            .not.toContain("create c.txt and change a.txt");
+    });
 });

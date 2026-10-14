@@ -5,7 +5,10 @@ import type { FileDiff } from "../messages/FileDiff";
 import type { RevChangeSummary } from "../messages/RevChangeSummary";
 import { setupMocks, cleanupMocks } from "../mocks";
 import { diffCache } from "./cache";
-import { diffMode } from "../stores";
+import { annotationCache } from "./annotate";
+import { annotateOn, diffMode, revisionSelectEvent } from "../stores";
+import type { FileAnnotation } from "../messages/FileAnnotation";
+import type { RevHeader } from "../messages/RevHeader";
 
 function mkId(hex: string) {
     return {
@@ -50,17 +53,47 @@ function mkDiff(): FileDiff {
     };
 }
 
+let header: RevHeader = {
+    id: set.from,
+    description: { lines: ["edit a"] },
+    author: { email: "a@example.com", name: "Alice", timestamp: "2026-01-01T00:00:00Z" },
+    has_conflict: false,
+    is_working_copy: false,
+    working_copy_of: null,
+    is_immutable: false,
+    refs: [],
+    parent_ids: [],
+};
+
+// lines 1-49 from an old change, 50 from this one, the rest from the old one again
+function mkAnnotation(): FileAnnotation {
+    let old = mkId("bbbb2222");
+    let lines = [];
+    for (let n = 1; n <= 100; n++) lines.push(n == 50 ? 1 : 0);
+    return {
+        origins: [
+            { id: old, author: { email: "b@example.com", name: "Bob", timestamp: "2025-01-01T00:00:00Z" }, summary: "initial" },
+            { id: set.from, author: header.author, summary: "edit a" },
+        ],
+        lines,
+    };
+}
+
 describe("DiffViewer", () => {
     let calls: { cmd: string; args: any }[];
 
     beforeEach(() => {
         localStorage.clear();
         diffCache.clear();
+        annotationCache.clear();
         diffMode.set("unified");
+        annotateOn.set(false);
+        revisionSelectEvent.set(undefined);
         calls = [];
         setupMocks((cmd, args: any) => {
             calls.push({ cmd, args });
             if (cmd == "query_file_diff") return mkDiff();
+            if (cmd == "query_annotate") return mkAnnotation();
             if (cmd == "query_file_lines") {
                 let out = [];
                 for (let n = args.start; n <= args.end; n++) out.push(`line ${n}`);
@@ -155,6 +188,36 @@ describe("DiffViewer", () => {
 
         await vi.waitFor(() => expect(container.querySelector(".add")).not.toBeNull());
         expect(container.querySelectorAll(".add").length).toBeLessThan(500);
+    });
+
+    it("annotates new-side lines and selects the origin on click", async () => {
+        annotateOn.set(true);
+        let { default: DiffViewer } = await import("./DiffViewer.svelte");
+        let { container } = render(DiffViewer, { props: { set, change, header } });
+
+        await vi.waitFor(() => expect(container.querySelector(".add .blame")).not.toBeNull());
+        expect(calls.find((c) => c.cmd == "query_annotate")!.args).toMatchObject({ id: header.id, path: change.path });
+        let added = container.querySelector(".add .blame")!;
+        expect(added.textContent).toContain("Alice");
+        // removed lines have no new-side line to attribute
+        expect(container.querySelector(".remove .blame")?.tagName).toBe("SPAN");
+
+        await fireEvent.click(added);
+        expect(get(revisionSelectEvent)?.from.commit.hex).toBe("aaaa1111");
+    });
+
+    it("doesn't annotate ranges or when toggled off", async () => {
+        let { default: DiffViewer } = await import("./DiffViewer.svelte");
+        let off = render(DiffViewer, { props: { set, change, header } });
+        await vi.waitFor(() => expect(off.container.querySelector(".add")).not.toBeNull());
+        expect(off.container.querySelector(".blame")).toBeNull();
+        off.unmount();
+
+        annotateOn.set(true);
+        let range = render(DiffViewer, { props: { set, change, header: null } });
+        await vi.waitFor(() => expect(range.container.querySelector(".add")).not.toBeNull());
+        expect(range.container.querySelector(".blame")).toBeNull();
+        expect(calls.filter((c) => c.cmd == "query_annotate")).toHaveLength(0);
     });
 
     it("defers lazy diffs until scrolled near", async () => {

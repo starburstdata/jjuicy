@@ -238,6 +238,25 @@ pub struct RemoteBookmarkState {
     pub behind: Option<u32>,
 }
 
+/// Line-by-line origins of a file at one revision, like `jj file annotate`.
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct FileAnnotation {
+    /// Each distinct revision that introduced at least one line.
+    pub origins: Vec<AnnotationOrigin>,
+    /// For each line of the file (line `n` at index `n - 1`), an index into `origins`.
+    pub lines: Vec<u32>,
+}
+
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct AnnotationOrigin {
+    pub id: RevId,
+    pub author: RevAuthor,
+    /// First line of the description.
+    pub summary: String,
+}
+
 /// One version of a change, newest first, like `jj evolog`.
 #[derive(Serialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
