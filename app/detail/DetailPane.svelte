@@ -38,7 +38,7 @@
                 {#each shownChanges as change (change.path.repo_path)}
                     <div class="change">
                         <FileHeader {change} header={singleton ? newest : null} />
-                        <DiffViewer set={revs.set} {change} header={singleton ? newest : null} />
+                        <DiffViewer set={revs.set} {change} header={singleton ? newest : null} lazy={selectedPath == null} />
                     </div>
                 {/each}
             </div>

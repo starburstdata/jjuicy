@@ -20,26 +20,33 @@
     export let change: RevChangeSummary;
     // non-null only for a single revision, where hunks can be dragged and conflicts resolved
     export let header: RevHeader | null;
+    // defer fetching until scrolled near, so all-files mode doesn't query every file at once
+    export let lazy = false;
 
     // every item is the same height, so the visible window is a division away
     const ITEM_HEIGHT = 22;
     const VIRTUALIZE_ABOVE = 2000;
     const OVERSCAN = 40;
+    const LAZY_MARGIN = "600px";
+    const ESTIMATE_MAX_ROWS = 200;
 
     let diff: FileDiff | null = null;
     let error: string | null = null;
     let reveals = new Map<number, Reveal>();
     let lines = new Map<number, string>();
 
-    $: load(set, change);
+    let inView = !lazy;
 
-    async function load(forSet: RevSet, forChange: RevChangeSummary) {
+    $: load(set, change, inView);
+
+    async function load(forSet: RevSet, forChange: RevChangeSummary, forView: boolean) {
         let key = diffKey(forSet, forChange.path.repo_path);
         let cached = diffCache.get(key);
         if (cached) {
             show(cached);
             return;
         }
+        if (!forView) return;
         let result = await query<FileDiff>("query_file_diff", { set: forSet, path: forChange.path, context: 3 });
         // a newer selection may have started while this one was in flight
         if (forSet != set || forChange != change) return;
@@ -102,6 +109,7 @@
     let first = 0;
     let last = 0;
     let observer: ResizeObserver | null = null;
+    let intersection: IntersectionObserver | null = null;
 
     $: virtual = items.length > VIRTUALIZE_ABOVE;
     $: if (!virtual) {
@@ -135,6 +143,18 @@
     }
 
     onMount(() => {
+        if (!inView) {
+            intersection = new IntersectionObserver(
+                (entries) => {
+                    if (entries.some((e) => e.isIntersecting)) {
+                        inView = true;
+                        intersection?.disconnect();
+                    }
+                },
+                { rootMargin: LAZY_MARGIN },
+            );
+            intersection.observe(host);
+        }
         scroller = scrollParent(host);
         (scroller ?? window).addEventListener("scroll", updateWindow, { passive: true });
         if (scroller) {
@@ -147,6 +167,7 @@
     onDestroy(() => {
         (scroller ?? window).removeEventListener("scroll", updateWindow);
         observer?.disconnect();
+        intersection?.disconnect();
     });
 
     $: visible = items.slice(first, last);
@@ -161,9 +182,15 @@
         <div class="scroll">
             <ConflictView blocks={diff.conflict} path={change.path} {header} />
         </div>
-    {:else if diff && diff.hunks.length == 0}
+    {:else if !diff}
+        <!-- roughly the final height, so scrolling past unloaded files doesn't trigger them all -->
+        <div
+            class="pending"
+            style="height: {Math.min(change.added + change.removed + 1, ESTIMATE_MAX_ROWS) * ITEM_HEIGHT}px">
+        </div>
+    {:else if diff.hunks.length == 0}
         <div class="placeholder">No content changes</div>
-    {:else if diff}
+    {:else}
         <div class="scroll">
             <div
                 class="diff {$diffMode}"
@@ -226,6 +253,10 @@
         text-align: left;
         height: 100%;
         box-sizing: border-box;
+    }
+
+    .pending {
+        background: var(--ju-colors-background);
     }
 
     .placeholder {
