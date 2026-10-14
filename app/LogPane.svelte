@@ -5,7 +5,17 @@
     import type { RevSet } from "./messages/RevSet";
     import { query } from "./ipc.js";
     import { sameChange } from "./ids.js";
-    import { ignoreToggled, logQueryRequest, repoStatusEvent, revisionSelectEvent } from "./stores.js";
+    import {
+        bookmarksExpanded,
+        ignoreToggled,
+        logDensity,
+        logQueryRequest,
+        repoStatusEvent,
+        revisionSelectEvent,
+    } from "./stores.js";
+    import { rowGeometry } from "./log/density.js";
+    import { formatCount } from "./shell/statusbar.js";
+    import Icon from "./controls/Icon.svelte";
     import RevisionMutator from "./mutators/RevisionMutator.js";
     import Pane from "./shell/Pane.svelte";
     import RevisionObject from "./objects/RevisionObject.svelte";
@@ -103,6 +113,16 @@
         $logQueryRequest = null;
         loadLog(true);
     }
+
+    $: bookmarkCount = (() => {
+        let names = new Set<string>();
+        for (let row of graphRows ?? []) {
+            for (let ref of row.revision.refs) {
+                if (ref.type == "LocalBookmark") names.add(ref.bookmark_name);
+            }
+        }
+        return names.size;
+    })();
 
     // index rows by commit hex so selection and per-row lookups stay O(1) as the graph grows
     $: rowIdxByHex = (() => {
@@ -346,6 +366,21 @@
 <Pane>
     <div slot="header">
         <RevsetSection {query_choices} bind:value={entered_query} error={queryError} onSubmit={reloadLog} />
+        <div class="column-header">
+            {#if bookmarkCount > 0}
+                <button
+                    class="bookmarks-toggle"
+                    aria-expanded={$bookmarksExpanded}
+                    on:click={() => ($bookmarksExpanded = !$bookmarksExpanded)}>
+                    <Icon name="bookmark" />
+                    <span>Bookmarks {formatCount(bookmarkCount)}</span>
+                    <Icon name={$bookmarksExpanded ? "chevron-up" : "chevron-down"} />
+                </button>
+            {/if}
+            {#if graphRows}
+                <span class="row-count">{formatCount(graphRows.length)} {graphRows.length == 1 ? "change" : "changes"}</span>
+            {/if}
+        </div>
     </div>
 
     <ListWidget
@@ -355,7 +390,8 @@
         {list}
         bind:clientHeight={logHeight}
         bind:clientWidth={logWidth}
-        bind:scrollTop={logScrollTop}>
+        bind:scrollTop={logScrollTop}
+        rowHeight={rowGeometry($logDensity).rowHeight}>
         {#if graphRows}
             <GraphLog
                 containerHeight={logHeight}
@@ -383,5 +419,44 @@
 <style>
     .log-entry {
         padding-left: 24px;
+    }
+
+    .column-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 22px;
+        padding: 2px 3px 0 3px;
+        font-size: var(--ju-text-sizeSm);
+        color: var(--ju-colors-foregroundSubtle);
+    }
+
+    .bookmarks-toggle {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        padding: 1px 3px;
+        border-radius: 4px;
+        cursor: pointer;
+
+        &:hover {
+            background: var(--ju-colors-surface);
+            color: var(--ju-colors-foreground);
+        }
+
+        & :global(.feather) {
+            height: 12px;
+            width: 12px;
+            min-width: 12px;
+        }
+    }
+
+    .row-count {
+        margin-left: auto;
     }
 </style>

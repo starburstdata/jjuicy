@@ -119,6 +119,8 @@ Settings loaded via `jj config`. Key jjuicy-specific settings in `src/config/jju
 - `jjuicy.default-mode` - "gui" or "web"
 - `jjuicy.queries.log-page-size` - paging size (default 1000)
 - `jjuicy.queries.large-repo-heuristic` - disables features when repo too large (default 100k)
+- `jjuicy.ui.log-density` - "comfortable" (cards) or "compact" (one line per row)
+- `jjuicy.ui.avatars` - "initials", "gravatar" or "none"
 
 ## Comment Style
 

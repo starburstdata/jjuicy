@@ -47,6 +47,8 @@ describe("StatusBar", () => {
             },
             mark_unpushed_bookmarks: false,
             track_recent_workspaces: true,
+            avatars: "initials",
+            log_density: "comfortable",
             ignore_immutable: false,
             has_external_diff_tool: false,
             has_external_merge_tool: false,

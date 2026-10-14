@@ -478,3 +478,32 @@ mod extract_overrides {
         assert!(settings.get_string("queries.auto-snapshot").is_err());
     }
 }
+
+#[test]
+fn avatars_default_is_initials() {
+    let settings = settings_with_gg_defaults();
+    assert_eq!(settings.ui_avatars(), "initials");
+}
+
+#[test]
+fn avatars_unknown_value_falls_back() {
+    let settings = settings_with_overrides(
+        r#"
+            [jjuicy.ui]
+            avatars = "robohash"
+            "#,
+    );
+    assert_eq!(settings.ui_avatars(), "initials");
+}
+
+#[test]
+fn log_density_can_be_compact() {
+    let settings = settings_with_overrides(
+        r#"
+            [jjuicy.ui]
+            log-density = "compact"
+            "#,
+    );
+    assert_eq!(settings.ui_log_density(), "compact");
+    assert_eq!(settings_with_gg_defaults().ui_log_density(), "comfortable");
+}

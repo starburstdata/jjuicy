@@ -26,6 +26,13 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   counters from `RepoStatus.summary`. Clicking a counter filters the log through
   `logQueryRequest`. The backend caps counts and skips the summary on large repos, so the
   counters are cheap to keep current.
+- Log rows have a fixed height per `jjuicy.ui.log-density` (`app/log/density.ts`): compact
+  rows are one line, comfortable rows are cards with id/refs, a two-line description and an
+  author line. Virtualisation and graph geometry both read that height, so a row's content
+  must never change its height.
+- Chips use a `variant` (bookmark, wc, conflict, divergent, tag, remote, immutable) mapped to
+  `chip*` theme tokens. Selection is a tint and a left bar rather than a fill, so chip and id
+  colours stay legible on the selected row.
 
 Architectural Choices
 ---------------------

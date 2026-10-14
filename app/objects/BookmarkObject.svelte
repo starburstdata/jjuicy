@@ -65,7 +65,7 @@
 
 <Object {operand} {label} conflicted={ref.has_conflict} let:context let:hint={dragHint}>
     <Zone {operand} let:target let:hint={dropHint}>
-        <Chip {context} {target} {disconnected} {tip}>
+        <Chip {context} {target} {disconnected} {tip} variant={ref.type === "LocalBookmark" ? "bookmark" : "remote"}>
             <Icon name="bookmark" state={context ? null : state} />
             <span>{dragHint ?? dropHint ?? label}</span>
         </Chip>

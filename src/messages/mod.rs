@@ -223,6 +223,10 @@ pub enum RepoConfig {
         status: RepoStatus,
         mark_unpushed_bookmarks: bool,
         track_recent_workspaces: bool,
+        /// "initials", "gravatar" or "none"
+        avatars: String,
+        /// "comfortable" or "compact"
+        log_density: String,
         ignore_immutable: bool,
         has_external_diff_tool: bool,
         has_external_merge_tool: bool,

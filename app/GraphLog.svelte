@@ -15,13 +15,16 @@
     import GraphLine from "./GraphLine.svelte";
     import GraphNode from "./GraphNode.svelte";
     import type { RevHeader } from "./messages/RevHeader.js";
+    import { logDensity } from "./stores.js";
+    import { rowGeometry } from "./log/density.js";
 
     interface $$Slots {
         default: { row: EnhancedRow | null };
     }
 
     const columnWidth = 18;
-    const rowHeight = 30;
+    $: geometry = rowGeometry($logDensity);
+    $: rowHeight = geometry.rowHeight;
     export let containerHeight: number;
     export let containerWidth: number;
     export let scrollTop: number;
@@ -99,13 +102,14 @@
             </foreignObject>
 
             {#if row}
-                <GraphNode header={row.revision} />
+                <GraphNode header={row.revision} {geometry} />
             {/if}
         </g>
     {/each}
 
-    {#each distinctLines as line (line.key)}
-        <GraphLine {line} />
+    <!-- paths are computed once per component, so a density change must remount them -->
+    {#each distinctLines as line (`${line.key}:${rowHeight}`)}
+        <GraphLine {line} {geometry} />
     {/each}
 </svg>
 

@@ -39,6 +39,8 @@ pub trait JjuicySettings {
     fn ui_theme_file(&self) -> Option<String>;
     fn ui_mark_unpushed_bookmarks(&self) -> bool;
     fn ui_track_recent_workspaces(&self) -> bool;
+    fn ui_avatars(&self) -> String;
+    fn ui_log_density(&self) -> String;
     #[allow(dead_code)]
     fn ui_recent_workspaces(&self) -> Vec<String>;
     fn web_default_port(&self) -> u16;
@@ -83,6 +85,21 @@ impl JjuicySettings for UserSettings {
     fn ui_track_recent_workspaces(&self) -> bool {
         self.get_bool("jjuicy.ui.track-recent-workspaces")
             .unwrap_or(true)
+    }
+
+    fn ui_avatars(&self) -> String {
+        match self.get_string("jjuicy.ui.avatars").as_deref() {
+            Ok("gravatar") => "gravatar".to_string(),
+            Ok("none") => "none".to_string(),
+            _ => "initials".to_string(),
+        }
+    }
+
+    fn ui_log_density(&self) -> String {
+        match self.get_string("jjuicy.ui.log-density").as_deref() {
+            Ok("compact") => "compact".to_string(),
+            _ => "comfortable".to_string(),
+        }
     }
 
     fn ui_recent_workspaces(&self) -> Vec<String> {

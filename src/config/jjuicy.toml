@@ -32,6 +32,15 @@ theme-override = ""
 # sections with colors, text, shadows, and components tokens.
 theme-file = ""
 
+# Author avatars in the log and detail panes. "initials" draws a coloured
+# monogram locally; "gravatar" fetches images from gravatar.com (sends a hash
+# of each author email over the network); "none" hides them.
+avatars = "initials"
+
+# Log row layout. "comfortable" shows two-line cards with description and
+# author; "compact" shows one line per revision.
+log-density = "comfortable"
+
 [jjuicy.web]
 default-port = 0       # Port to bind to in web mode (0 = random)
 client-timeout = "10m" # Disconnect clients after this duration of inactivity

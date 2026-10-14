@@ -165,21 +165,10 @@ Core component for direct-manipulation objects. A drag&drop source.
         cursor: grab;
     }
 
+    /* tint plus an accent bar rather than a solid fill, so chips and ids keep their colours */
     .selected {
-        background: var(--ju-colors-selectionBackground);
-        color: var(--ju-colors-selectionForeground);
-    }
-
-    .selected :global(.id) {
-        color: var(--ju-colors-selectionForeground);
-    }
-
-    .selected :global(.prefix) {
-        color: var(--ju-colors-accentSelected);
-    }
-
-    .selected :global(.divergent) {
-        color: var(--ju-colors-highlight);
+        background: var(--ju-colors-selectionTint);
+        box-shadow: inset 3px 0 0 var(--ju-colors-selectionBar);
     }
 
     .conflict {
@@ -197,26 +186,7 @@ Core component for direct-manipulation objects. A drag&drop source.
     }
 
     .selected.conflict {
-        background: repeating-linear-gradient(
-            120deg,
-            var(--ju-colors-conflictStroke) 0px,
-            var(--ju-colors-conflictStroke) 12px,
-            color-mix(in srgb, var(--ju-colors-conflictStroke) 80%, var(--ju-colors-background)) 12px,
-            color-mix(in srgb, var(--ju-colors-conflictStroke) 80%, var(--ju-colors-background)) 15px
-        );
-        color: var(--ju-colors-warningContent);
-    }
-
-    .selected.conflict :global(.id) {
-        color: var(--ju-colors-warningContent);
-    }
-
-    .selected.conflict :global(.prefix) {
-        color: var(--ju-colors-accent);
-    }
-
-    .selected.conflict :global(.feather) {
-        color: var(--ju-colors-conflictAlt);
+        box-shadow: inset 3px 0 0 var(--ju-colors-selectionBar);
     }
 
     .context {
@@ -226,41 +196,4 @@ Core component for direct-manipulation objects. A drag&drop source.
     .hint {
         color: var(--ju-colors-highlight);
     }
-
-    .selected :global(.feather.remove) {
-        stroke: var(--ju-colors-removedAlt);
-    }
-
-    .selected :global(.feather.add) {
-        stroke: var(--ju-colors-addedAlt);
-    }
-
-    .selected :global(.feather.change) {
-        stroke: var(--ju-colors-modifiedAlt);
-    }
-
-    .selected :global(.desc.indescribable) {
-        color: var(--ju-colors-selectionForegroundMuted);
-    }
-
-    .selected :global(.author) {
-        color: var(--ju-colors-selectionForegroundMuted);
-    }
-
-    /* bookmark styles */
-    .selected :global(.chip .feather.remove) {
-        stroke: var(--ju-colors-removed);
-        fill: var(--ju-colors-removed);
-    }
-
-    .selected  :global(.chip .feather.add) {
-        stroke: var(--ju-colors-added);
-        fill: var(--ju-colors-added);
-    }
-
-    .selected :global(.chip .feather.change) {
-        stroke: var(--ju-colors-modified);
-        fill: var(--ju-colors-modified);
-    }
-
 </style>

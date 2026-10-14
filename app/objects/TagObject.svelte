@@ -25,7 +25,7 @@
 </script>
 
 <div role="presentation" on:contextmenu={onContextMenu}>
-    <Chip context={false} target={false} immobile tip="tag">
+    <Chip context={false} target={false} immobile tip="tag" variant="tag">
         <Icon name="tag" state="change" />
         <span>{ref.tag_name}</span>
     </Chip>

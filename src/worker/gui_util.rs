@@ -833,6 +833,8 @@ impl WorkspaceSession<'_> {
             status: self.format_status().await,
             mark_unpushed_bookmarks: self.data.workspace_settings.ui_mark_unpushed_bookmarks(),
             track_recent_workspaces: self.data.workspace_settings.ui_track_recent_workspaces(),
+            avatars: self.data.workspace_settings.ui_avatars(),
+            log_density: self.data.workspace_settings.ui_log_density(),
             ignore_immutable: self.session.ignore_immutable,
             has_external_diff_tool,
             has_external_merge_tool,
