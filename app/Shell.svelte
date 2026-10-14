@@ -12,6 +12,7 @@
         revisionSelectEvent,
         selectionHeaders,
         currentInput,
+        currentConfirmation,
         hasMenu,
         lastFocus,
         ignoreToggled,
@@ -35,6 +36,7 @@
     import RecentWorkspaces from "./shell/RecentWorkspaces.svelte";
     import { onMount, setContext } from "svelte";
     import InputDialog from "./shell/InputDialog.svelte";
+    import ConfirmDialog from "./shell/ConfirmDialog.svelte";
     import type Settings from "./shell/Settings";
     import type { RepoEvent } from "./messages/RepoEvent";
     import RepositoryMutator from "./mutators/RepositoryMutator";
@@ -355,6 +357,19 @@
                     detail={$currentInput.detail}
                     fields={$currentInput.fields}
                     on:response={(event) => $currentInput?.callback(event.detail)} />
+            </ModalOverlay>
+        {:else if $currentConfirmation}
+            <ModalOverlay>
+                <ConfirmDialog
+                    title={$currentConfirmation.title}
+                    detail={$currentConfirmation.detail}
+                    items={$currentConfirmation.items}
+                    action={$currentConfirmation.action}
+                    on:response={(event) => {
+                        let callback = $currentConfirmation?.callback;
+                        $currentConfirmation = null;
+                        callback?.(event.detail);
+                    }} />
             </ModalOverlay>
         {:else if $currentMutation && $currentMutation.type !== "wait"}
             <ModalOverlay>

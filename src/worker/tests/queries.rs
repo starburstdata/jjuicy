@@ -1,10 +1,11 @@
 use super::{mkid, mkrepo, revs};
 use crate::messages::{
     RevId, RevSet, StoreRef, TreePath,
+    mutations::CreateRef,
     queries::{ConflictRegion, DiffRowKind, FileDiff, FileDiffKind, FileSide, RevsResult},
 };
 use crate::worker::gui_util::WorkspaceSession;
-use crate::worker::{WorkerSession, queries};
+use crate::worker::{Mutation, WorkerSession, queries};
 use anyhow::Result;
 use assert_matches::assert_matches;
 use std::collections::HashSet;
@@ -1200,6 +1201,87 @@ async fn file_lines_are_clamped() -> Result<()> {
 
     let empty = queries::query_file_lines(&ws, set, path, FileSide::New, 3, 2).await?;
     assert!(empty.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn bookmarks_merged_into_trunk() -> Result<()> {
+    let repo = mkrepo();
+    let mut session = WorkerSession::default();
+    let mut ws = session.load_workspace(repo.path()).await?;
+
+    CreateRef {
+        id: revs::immutable_parent(),
+        r#ref: StoreRef::LocalBookmark {
+            bookmark_name: "landed".to_owned(),
+            has_conflict: false,
+            is_synced: false,
+            tracking_remotes: vec![],
+            available_remotes: 0,
+            potential_remotes: 0,
+        },
+    }
+    .execute_unboxed(&mut ws)
+    .await?;
+
+    let bookmarks = queries::query_bookmarks(&ws)?;
+    let landed = bookmarks.iter().find(|b| b.name == "landed").unwrap();
+    assert!(landed.is_merged);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn bookmarks_sync_state() -> Result<()> {
+    let repo = mkrepo();
+    let mut session = WorkerSession::default();
+    let ws = session.load_workspace(repo.path()).await?;
+
+    let bookmarks = queries::query_bookmarks(&ws)?;
+    let find = |name: &str| bookmarks.iter().find(|b| b.name == name).unwrap();
+
+    // main has moved one commit past both remotes
+    let main = find("main");
+    assert!(main.target.is_some());
+    assert_eq!(2, main.remotes.len());
+    for remote in &main.remotes {
+        assert_eq!((Some(1), Some(0)), (remote.ahead, remote.behind));
+    }
+    assert!(
+        main.remotes
+            .iter()
+            .any(|r| r.remote == "origin" && r.tracked)
+    );
+    assert!(
+        main.remotes
+            .iter()
+            .any(|r| r.remote == "second" && !r.tracked)
+    );
+
+    // trunk() itself never counts as merged, or a synced main would offer to delete itself
+    assert!(bookmarks.iter().all(|b| !b.is_merged));
+
+    let pr = find("pull-request");
+    assert_eq!(
+        (Some(0), Some(0)),
+        (pr.remotes[0].ahead, pr.remotes[0].behind)
+    );
+
+    // remote-only bookmarks have no local target and nothing to compare
+    let remote_only = find("remote-branch");
+    assert!(remote_only.target.is_none());
+    assert!(!remote_only.remotes[0].tracked);
+    assert!(remote_only.remotes[0].target.is_some());
+    assert_eq!(None, remote_only.remotes[0].ahead);
+
+    // the git-internal remote is never reported
+    assert!(
+        bookmarks
+            .iter()
+            .flat_map(|b| &b.remotes)
+            .all(|r| r.remote != "git")
+    );
 
     Ok(())
 }

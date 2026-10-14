@@ -28,24 +28,27 @@ use jj_lib::{
     },
     diff_presentation::LineCompareMode,
     files::{self, FileMergeHunkLevel, MergeResult},
+    git::REMOTE_NAME_FOR_LOCAL_GIT_REPO,
     graph::{GraphEdge, GraphEdgeType, TopoGroupedGraphIterator},
     matchers::EverythingMatcher,
     merge::{Diff, SameChange},
     merged_tree::MergedTree,
+    op_store::RefTarget,
     ref_name::{RefNameBuf, RemoteNameBuf, RemoteRefSymbol},
     repo::Repo,
     repo_path::RepoPath,
-    revset::{Revset, RevsetEvaluationError},
+    revset::{Revset, RevsetEvaluationError, RevsetExpression},
     rewrite,
     tree_merge::MergeOptions,
 };
 
 use crate::config::JjuicySettings;
+use crate::messages::RevHeader;
+#[cfg(test)]
+use crate::messages::RevId;
 use crate::messages::{
     ChangeHunk, ChangeLocation, ChangeRange, MultilineString, RevSet, TreePath, queries::*,
 };
-#[cfg(test)]
-use crate::messages::{RevHeader, RevId};
 
 use super::{WorkspaceSession, git_util::get_git_remote_names};
 
@@ -730,6 +733,76 @@ pub async fn query_file_lines(
         .take(end - start + 1)
         .map(|line| line.to_owned())
         .collect())
+}
+
+/// ahead/behind counts stop here; the ui shows "100+"
+pub const BOOKMARK_COUNT_CAP: u32 = 100;
+
+pub fn query_bookmarks(ws: &WorkspaceSession) -> Result<Vec<BookmarkEntry>> {
+    // trunk itself is excluded, or a synced main would offer to delete itself
+    let merged = ws.evaluate_revset_str("::trunk() ~ trunk()")?;
+    let is_merged = merged.containing_fn();
+
+    let mut entries = Vec::new();
+    for (name, target) in ws.view().bookmarks() {
+        let local = target.local_target;
+        let mut remotes = Vec::new();
+        for &(remote, remote_ref) in &target.remote_refs {
+            if remote == REMOTE_NAME_FOR_LOCAL_GIT_REPO {
+                continue;
+            }
+            let (ahead, behind) = if ws.is_large() {
+                (None, None)
+            } else {
+                (
+                    count_range(ws, &remote_ref.target, local)?,
+                    count_range(ws, local, &remote_ref.target)?,
+                )
+            };
+            remotes.push(RemoteBookmarkState {
+                remote: remote.as_str().to_owned(),
+                target: format_target(ws, &remote_ref.target)?,
+                tracked: remote_ref.is_tracked(),
+                absent: remote_ref.is_tracked() && local.is_absent(),
+                ahead,
+                behind,
+            });
+        }
+        entries.push(BookmarkEntry {
+            name: name.as_str().to_owned(),
+            target: format_target(ws, local)?,
+            has_conflict: local.has_conflict(),
+            is_merged: match local.as_normal() {
+                Some(id) => is_merged(id)?,
+                None => false,
+            },
+            remotes,
+        });
+    }
+    Ok(entries)
+}
+
+// conflicted targets show their first side; the conflict itself is flagged separately
+fn format_target(ws: &WorkspaceSession, target: &RefTarget) -> Result<Option<RevHeader>> {
+    match target.added_ids().next() {
+        Some(id) => Ok(Some(ws.format_header(&ws.get_commit(id)?, None)?)),
+        None => Ok(None),
+    }
+}
+
+/// commits reachable from `heads` but not `roots`; None if either side is absent
+fn count_range(ws: &WorkspaceSession, roots: &RefTarget, heads: &RefTarget) -> Result<Option<u32>> {
+    if roots.is_absent() || heads.is_absent() {
+        return Ok(None);
+    }
+    let roots = RevsetExpression::commits(roots.added_ids().cloned().collect());
+    let heads = RevsetExpression::commits(heads.added_ids().cloned().collect());
+    let revset = ws.evaluate_revset_expr(ws.repo(), roots.range(&heads))?;
+    let count = revset
+        .iter()
+        .take(BOOKMARK_COUNT_CAP as usize)
+        .process_results(|iter| iter.count())?;
+    Ok(Some(count as u32))
 }
 
 pub fn query_remotes(

@@ -44,7 +44,7 @@ use tokio::sync::{broadcast, oneshot};
 use crate::config::{JjuicySettings, read_config};
 use crate::messages::mutations::{
     AbandonRevisions, AdoptRevision, BackoutRevisions, CheckoutRevision, CopyChanges, CopyHunk,
-    CreateRef, CreateRevision, CreateRevisionBetween, DeleteRef, DescribeRevision,
+    CreateRef, CreateRevision, CreateRevisionBetween, DeleteRef, DeleteRefs, DescribeRevision,
     DuplicateRevisions, ExternalDiff, ExternalResolve, ForgetWorkspace, GitFetch, GitPush,
     InsertRevisions, MoveChanges, MoveHunk, MoveRef, MoveRevisions, MutationOptions,
     RenameBookmark, RenameWorkspace, ResolveConflictSide, TrackBookmark, UndoOperation,
@@ -326,6 +326,7 @@ async fn handle_mutate(
         "rename_bookmark" => execute_mutation::<RenameBookmark>(&state, body),
         "create_ref" => execute_mutation::<CreateRef>(&state, body),
         "delete_ref" => execute_mutation::<DeleteRef>(&state, body),
+        "delete_refs" => execute_mutation::<DeleteRefs>(&state, body),
         "move_ref" => execute_mutation::<MoveRef>(&state, body),
         "git_push" => execute_mutation::<GitPush>(&state, body),
         "git_fetch" => execute_mutation::<GitFetch>(&state, body),

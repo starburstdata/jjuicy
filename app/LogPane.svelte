@@ -20,6 +20,8 @@
     import Pane from "./shell/Pane.svelte";
     import RevisionObject from "./objects/RevisionObject.svelte";
     import RevsetSection from "./log/RevsetSection.svelte";
+    import BookmarkSection from "./log/BookmarkSection.svelte";
+    import { withRevision } from "./log/bookmarks.js";
     import ListWidget, { type List, type Selection } from "./controls/ListWidget.svelte";
     import { type EnhancedRow, default as GraphLog, type EnhancedLine } from "./GraphLog.svelte";
 
@@ -114,15 +116,29 @@
         loadLog(true);
     }
 
-    $: bookmarkCount = (() => {
-        let names = new Set<string>();
-        for (let row of graphRows ?? []) {
-            for (let ref of row.revision.refs) {
-                if (ref.type == "LocalBookmark") names.add(ref.bookmark_name);
-            }
-        }
-        return names.size;
-    })();
+    let bookmarkCount = 0;
+    let listWidget: ListWidget;
+
+    function revealBookmark(header: RevHeader) {
+        let idx = rowIdxByHex.get(header.id.commit.hex);
+        if (idx === undefined) return;
+        setSelection(idx, idx);
+        listWidget?.revealRow(idx);
+    }
+
+    function showInLog(header: RevHeader) {
+        $logQueryRequest = withRevision(entered_query == "" ? "all()" : entered_query, header.id.commit.hex);
+        pendingReveal = header.id.commit.hex;
+    }
+
+    // revealed once the widened query has loaded the row
+    let pendingReveal: string | null = null;
+    $: if (pendingReveal && graphRows && rowIdxByHex.has(pendingReveal)) {
+        let idx = rowIdxByHex.get(pendingReveal)!;
+        pendingReveal = null;
+        setSelection(idx, idx);
+        listWidget?.revealRow(idx);
+    }
 
     // index rows by commit hex so selection and per-row lookups stay O(1) as the graph grows
     $: rowIdxByHex = (() => {
@@ -381,10 +397,19 @@
                 <span class="row-count">{formatCount(graphRows.length)} {graphRows.length == 1 ? "change" : "changes"}</span>
             {/if}
         </div>
+        <!-- kept mounted while collapsed so the toggle's count stays current -->
+        <div class="bookmark-section" class:collapsed={!$bookmarksExpanded}>
+            <BookmarkSection
+                bind:count={bookmarkCount}
+                loaded={rowIdxByHex}
+                onReveal={revealBookmark}
+                onShowInLog={showInLog} />
+        </div>
     </div>
 
     <ListWidget
         slot="body"
+        bind:this={listWidget}
         type="Revision"
         descendant={$revisionSelectEvent?.to.commit.prefix}
         {list}
@@ -458,5 +483,9 @@
 
     .row-count {
         margin-left: auto;
+    }
+
+    .collapsed {
+        display: none;
     }
 </style>
