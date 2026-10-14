@@ -23,6 +23,7 @@ pub use crate::{
         ChangeHunk, TreePath,
         mutations::{
             CopyChanges, CopyHunk, MoveChanges, MoveHunk, MutationOptions, MutationResult,
+            ResolveConflictSide,
         },
     },
     worker::{Mutation, gui_util::WorkspaceSession},
@@ -616,6 +617,78 @@ impl Mutation for CopyHunk {
                 format!(
                     "restore hunk in {} from {} into {}",
                     self.path.repo_path, self.from_id.hex, self.to_id.commit.hex
+                ),
+            )
+            .await?
+        {
+            Some(new_status) => Ok(MutationResult::Updated {
+                new_status,
+                new_selection: None,
+            }),
+            None => Ok(MutationResult::Unchanged),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl Mutation for ResolveConflictSide {
+    async fn execute(
+        self: Box<Self>,
+        ws: &mut WorkspaceSession,
+        options: &MutationOptions,
+    ) -> Result<MutationResult> {
+        let mut tx = ws.start_transaction().await?;
+
+        let commit = ws.resolve_change_id(&self.id)?;
+        if ws.check_immutable(vec![commit.id().clone()])? && !options.ignore_immutable {
+            precondition!("Revision is immutable");
+        }
+
+        let repo_path = RepoPath::from_internal_string(&self.path.repo_path)?;
+        let tree = commit.tree();
+        let value = tree.path_value(repo_path)?;
+        if value.is_resolved() {
+            precondition!("{} is not conflicted", self.path.repo_path);
+        }
+
+        // same restriction as jj's :ours/:theirs tools - a side that's a symlink or tree
+        // can't be picked as file content
+        let Some(file) = value.to_file_merge() else {
+            precondition!("{} has a non-file conflict", self.path.repo_path);
+        };
+        let Some(file_id) = file.get_add(self.side as usize) else {
+            precondition!("Conflict has no side {}", self.side + 1);
+        };
+        let executable = value
+            .to_executable_merge()
+            .and_then(|merge| merge.get_add(self.side as usize).copied().flatten())
+            .unwrap_or(false);
+
+        // a side that deleted the file resolves to deletion
+        let new_value = Merge::resolved(file_id.clone().map(|id| TreeValue::File {
+            id,
+            executable,
+            copy_id: CopyId::placeholder(),
+        }));
+        let mut builder = MergedTreeBuilder::new(tree.clone());
+        builder.set_or_remove(repo_path.to_owned(), new_value);
+        let new_tree = builder.write_tree().await?;
+
+        tx.repo_mut()
+            .rewrite_commit(&commit)
+            .set_tree(new_tree)
+            .write()
+            .await?;
+        tx.repo_mut().rebase_descendants().await?;
+
+        match ws
+            .finish_transaction(
+                tx,
+                format!(
+                    "resolve {} in {} using side {}",
+                    self.path.repo_path,
+                    commit.id().hex(),
+                    self.side + 1
                 ),
             )
             .await?
@@ -2257,6 +2330,76 @@ mod tests {
             }
             _ => panic!("Expected hunk_test.txt to be a file"),
         }
+
+        Ok(())
+    }
+
+    async fn resolve_side(
+        ws: &mut WorkspaceSession<'_>,
+        path: &str,
+        side: u32,
+    ) -> Result<MutationResult> {
+        ResolveConflictSide {
+            id: revs::conflict_bookmark(),
+            path: TreePath {
+                repo_path: path.to_owned(),
+                relative_path: "".into(),
+            },
+            side,
+        }
+        .execute_unboxed(ws)
+        .await
+    }
+
+    #[tokio::test]
+    async fn resolve_conflict_side() -> Result<()> {
+        let repo = mkrepo();
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+        let repo_path = RepoPath::from_internal_string("b.txt")?;
+
+        let before = get_by_chid(&ws, &revs::conflict_bookmark())?.tree();
+        let sides: Vec<_> = before
+            .path_value(repo_path)?
+            .to_file_merge()
+            .unwrap()
+            .adds()
+            .cloned()
+            .collect();
+        assert_eq!(sides.len(), 2);
+
+        let result = resolve_side(&mut ws, "b.txt", 1).await?;
+        assert_matches!(result, MutationResult::Updated { .. });
+
+        let after = get_by_chid(&ws, &revs::conflict_bookmark())?.tree();
+        let value = after.path_value(repo_path)?;
+        assert!(value.is_resolved());
+        assert_eq!(
+            value.to_file_merge().unwrap().into_resolved().unwrap(),
+            sides[1]
+        );
+
+        // descendants are rebased onto the resolution
+        let child = get_by_chid(&ws, &revs::inherited_conflict())?;
+        assert!(child.tree().path_value(repo_path)?.is_resolved());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn resolve_conflict_side_preconditions() -> Result<()> {
+        let repo = mkrepo();
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+
+        assert_matches!(
+            resolve_side(&mut ws, "b.txt", 2).await?,
+            MutationResult::PreconditionError { .. }
+        );
+        assert_matches!(
+            resolve_side(&mut ws, "a.txt", 0).await?,
+            MutationResult::PreconditionError { .. }
+        );
 
         Ok(())
     }

@@ -137,6 +137,16 @@ pub struct CopyHunk {
     pub hunk: ChangeHunk,
 }
 
+/// Resolves a conflicted file by taking one side's content wholesale
+#[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct ResolveConflictSide {
+    pub id: RevId,
+    pub path: TreePath,
+    /// index into the conflict's sides (adds), matching `ConflictRegion::Conflict::sides`
+    pub side: u32,
+}
+
 /// Updates a revision's description
 #[derive(Deserialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]

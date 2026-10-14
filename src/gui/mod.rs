@@ -34,7 +34,7 @@ use jjuicy_lib::messages::{
         DescribeRevision, DuplicateRevisions, ExternalDiff, ExternalResolve, ForgetWorkspace,
         GitFetch, GitPush, InitRepository, InsertRevisions, MoveChanges, MoveHunk, MoveRef,
         MoveRevisions, MutationOptions, MutationResult, RenameBookmark, RenameWorkspace,
-        TrackBookmark, UndoOperation, UntrackBookmark,
+        ResolveConflictSide, TrackBookmark, UndoOperation, UntrackBookmark,
     },
 };
 use jjuicy_lib::worker::{Mutation, Session, SessionEvent, WorkerSession};
@@ -225,6 +225,7 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             git_fetch,
             external_diff,
             external_resolve,
+            resolve_conflict_side,
             forget_workspace,
             rename_workspace,
             undo_operation,
@@ -743,6 +744,16 @@ fn move_hunk(
     window: Window,
     app_state: State<AppState>,
     mutation: MoveHunk,
+    options: MutationOptions,
+) -> Result<MutationResult, InvokeError> {
+    try_mutate(window, app_state, mutation, options)
+}
+
+#[tauri::command(async)]
+fn resolve_conflict_side(
+    window: Window,
+    app_state: State<AppState>,
+    mutation: ResolveConflictSide,
     options: MutationOptions,
 ) -> Result<MutationResult, InvokeError> {
     try_mutate(window, app_state, mutation, options)

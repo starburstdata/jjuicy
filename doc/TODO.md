@@ -19,3 +19,4 @@ With some dynamic way to show extra panes, replace content, open new windows &c,
 UI Refresh Follow-ups
 ---------------------
 * Hunk context menu: "move to child" (needs a target picker when there are several children).
+* Conflict view: per-hunk side acceptance; "accept" currently resolves the whole file to one side.
