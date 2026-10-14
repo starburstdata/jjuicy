@@ -22,7 +22,7 @@ use crate::{
     messages::mutations::{
         AbandonRevisions, AdoptRevision, BackoutRevisions, CheckoutRevision, CreateRevision,
         CreateRevisionBetween, DescribeRevision, DuplicateRevisions, InsertRevisions,
-        MoveRevisions, MutationOptions, MutationResult,
+        MoveRevisions, MutationOptions, MutationResult, RestoreFromEvolog,
     },
     worker::{Mutation, gui_util::WorkspaceSession},
 };
@@ -389,6 +389,59 @@ impl Mutation for DescribeRevision {
 
         match ws
             .finish_transaction(tx, format!("describe commit {}", described.id().hex()))
+            .await?
+        {
+            Some(new_status) => Ok(MutationResult::Updated {
+                new_status,
+                new_selection: None,
+            }),
+            None => Ok(MutationResult::Unchanged),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl Mutation for RestoreFromEvolog {
+    async fn execute(
+        self: Box<Self>,
+        ws: &mut WorkspaceSession,
+        options: &MutationOptions,
+    ) -> Result<MutationResult> {
+        let mut tx = ws.start_transaction().await?;
+
+        let to = ws.resolve_change_id(&self.id)?;
+        if ws.check_immutable(vec![to.id().clone()])? && !options.ignore_immutable {
+            precondition!("Revision {} is immutable", self.id.change.prefix);
+        }
+
+        let from =
+            ws.get_commit(&CommitId::try_from_hex(&self.from.hex).expect("frontend-validated id"))?;
+        if from.change_id() != to.change_id() {
+            precondition!(
+                "{} is not a version of {}",
+                self.from.prefix,
+                self.id.change.prefix
+            );
+        }
+        if from.tree_ids() == to.tree_ids() {
+            return Ok(MutationResult::Unchanged);
+        }
+
+        tx.repo_mut()
+            .rewrite_commit(&to)
+            .set_tree(from.tree())
+            .write()
+            .await?;
+
+        match ws
+            .finish_transaction(
+                tx,
+                format!(
+                    "restore {} from version {}",
+                    to.change_id().reverse_hex(),
+                    from.id().hex()
+                ),
+            )
             .await?
         {
             Some(new_status) => Ok(MutationResult::Updated {
@@ -943,6 +996,73 @@ mod tests {
 
         let header = queries::query_revision(&ws, &revs::working_copy())?.expect("exists");
         assert_eq!(header.description.lines[0], "wip");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn evolog_and_restore_from_version() -> Result<()> {
+        let repo = mkrepo();
+
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+
+        let original = queries::query_evolog(&ws, &revs::working_copy())?;
+        assert_eq!(1, original.len());
+        let empty_version = original[0].commit.id.commit.clone();
+
+        fs::write(repo.path().join("evolved.txt"), "evolved").unwrap();
+        DescribeRevision {
+            id: revs::working_copy(),
+            new_description: "evolved".to_owned(),
+            reset_author: false,
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+
+        let wc = queries::query_log(&ws, "@", 1)?.rows[0].revision.id.clone();
+        let versions = queries::query_evolog(&ws, &wc)?;
+        // snapshot, then describe
+        assert_eq!(3, versions.len());
+        assert_eq!(versions[0].commit.description.lines[0], "evolved");
+        assert!(versions[0].operation.is_some());
+        let oldest = versions.last().unwrap();
+        assert_eq!(oldest.commit.id.commit.hex, empty_version.hex);
+        assert!(oldest.commit.id.change.offset.is_some());
+
+        // hidden versions resolve through their offset, so the ui can diff them
+        let old = query_by_id(&ws, oldest.commit.id.clone()).await?;
+        assert_matches!(old, RevsResult::Detail { changes, .. } if changes.is_empty());
+
+        let result = RestoreFromEvolog {
+            id: wc.clone(),
+            from: empty_version,
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+        assert_matches!(result, MutationResult::Updated { .. });
+
+        let wc = queries::query_log(&ws, "@", 1)?.rows[0].revision.id.clone();
+        let rev = query_by_id(&ws, wc.clone()).await?;
+        assert_matches!(rev, RevsResult::Detail { headers, changes, .. } if headers.last().unwrap().description.lines[0] == "evolved" && changes.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn restore_from_evolog_rejects_other_change() -> Result<()> {
+        let repo = mkrepo();
+
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+
+        let result = RestoreFromEvolog {
+            id: revs::working_copy(),
+            from: revs::main_bookmark().commit,
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+        assert_matches!(result, MutationResult::PreconditionError { .. });
 
         Ok(())
     }

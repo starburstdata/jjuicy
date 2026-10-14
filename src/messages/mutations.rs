@@ -280,6 +280,15 @@ pub struct RestoreOperation {
     pub id: String,
 }
 
+/// Sets a change's content to that of one of its earlier versions, keeping its
+/// current parents and description.
+#[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct RestoreFromEvolog {
+    pub id: RevId,
+    pub from: CommitId,
+}
+
 /// Forgets a workspace, removing it from the repository.
 /// If the workspace's working copy commit is empty, it is abandoned.
 #[derive(Deserialize, Debug)]

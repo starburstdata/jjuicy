@@ -238,6 +238,15 @@ pub struct RemoteBookmarkState {
     pub behind: Option<u32>,
 }
 
+/// One version of a change, newest first, like `jj evolog`.
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct EvologEntry {
+    pub commit: RevHeader,
+    /// Description of the operation that created this version, when known.
+    pub operation: Option<String>,
+}
+
 /// One entry in the operation log, newest first.
 #[derive(Serialize, Debug)]
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]

@@ -7,8 +7,8 @@ use axum::{Json, Router, extract::State, routing::post};
 use serde::Deserialize;
 
 use crate::messages::{
-    RepoConfig, RepoStatus, RevSet, TreePath,
-    queries::{BookmarkEntry, FileDiff, FileSide, LogPage, OpLogEntry, RevsResult},
+    RepoConfig, RepoStatus, RevId, RevSet, TreePath,
+    queries::{BookmarkEntry, EvologEntry, FileDiff, FileSide, LogPage, OpLogEntry, RevsResult},
 };
 use crate::worker::SessionEvent;
 
@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/query_remotes", post(query_remotes))
         .route("/query_bookmarks", post(query_bookmarks))
         .route("/query_op_log", post(query_op_log))
+        .route("/query_evolog", post(query_evolog))
         .route("/view_operation", post(view_operation))
         .route("/query_recent_workspaces", post(query_recent_workspaces))
         .route("/query_snapshot", post(query_snapshot))
@@ -199,6 +200,23 @@ async fn query_op_log(
         limit: req.limit,
         offset: req.offset,
     })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct QueryEvolog {
+    id: RevId,
+}
+
+async fn query_evolog(
+    State(state): State<AppState>,
+    Json(req): Json<QueryEvolog>,
+) -> Result<Json<Vec<EvologEntry>>, ApiError> {
+    let (tx, rx) = channel();
+    state
+        .worker_tx
+        .send(SessionEvent::QueryEvolog { tx, id: req.id })?;
     let result = rx.recv()??;
     Ok(Json(result))
 }

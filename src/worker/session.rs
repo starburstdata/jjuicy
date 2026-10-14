@@ -106,6 +106,11 @@ pub enum SessionEvent {
         limit: u32,
         offset: u32,
     },
+    /// Every version of a change, newest first.
+    QueryEvolog {
+        tx: Sender<Result<Vec<messages::queries::EvologEntry>>>,
+        id: messages::RevId,
+    },
     /// View the repo read-only as of a past operation, or return to the head with `None`.
     ViewOperation {
         tx: Sender<Result<messages::RepoStatus>>,
@@ -340,6 +345,9 @@ impl Session for WorkspaceSession<'_> {
                 SessionEvent::QueryBookmarks { tx } => tx.send(queries::query_bookmarks(&self))?,
                 SessionEvent::QueryOpLog { tx, limit, offset } => {
                     tx.send(queries::query_op_log(&self, limit, offset))?
+                }
+                SessionEvent::QueryEvolog { tx, id } => {
+                    tx.send(queries::query_evolog(&self, &id))?
                 }
                 SessionEvent::QueryLog {
                     tx,
@@ -616,6 +624,9 @@ impl Session for QuerySession<'_, '_> {
                 }
                 Ok(SessionEvent::QueryOpLog { tx, limit, offset }) => {
                     tx.send(queries::query_op_log(self.ws, limit, offset))?
+                }
+                Ok(SessionEvent::QueryEvolog { tx, id }) => {
+                    tx.send(queries::query_evolog(self.ws, &id))?
                 }
                 Ok(SessionEvent::QueryLogNextPage { tx }) => tx.send(self.get_page())?,
                 Ok(unhandled) => return Ok(QueryResult(unhandled, self.state)),

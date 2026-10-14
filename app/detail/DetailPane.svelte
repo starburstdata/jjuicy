@@ -1,3 +1,12 @@
+<script lang="ts" context="module">
+    type Tab = "changes" | "history";
+    // the pane remounts while a mutation re-queries the selection; the tab should survive that
+    let remembered = { change: "", tab: "changes" as Tab };
+    function remember(change: string, tab: Tab) {
+        remembered = { change, tab };
+    }
+</script>
+
 <script lang="ts">
     import type { RevsResult } from "../messages/RevsResult";
     import { ignoreToggled, selectedFile } from "../stores";
@@ -8,6 +17,7 @@
     import Pane from "../shell/Pane.svelte";
     import { onEvent } from "../ipc";
     import RevisionHeader from "./RevisionHeader.svelte";
+    import EvologView from "./EvologView.svelte";
 
     export let revs: Extract<RevsResult, { type: "Detail" }>;
 
@@ -26,6 +36,11 @@
     $: shownChanges =
         selectedPath == null ? syntheticChanges : syntheticChanges.filter((c) => c.path.repo_path == selectedPath);
 
+    // history is per-change, so ranges only have changes
+    let tab: Tab = remembered.change == revs.set.from.change.hex ? remembered.tab : "changes";
+    $: if (!singleton) tab = "changes";
+    $: remember(revs.set.from.change.hex, tab);
+
     onEvent<string>("jjuicy://menu/revision", (event) => mutator.handle(event));
 </script>
 
@@ -33,7 +48,16 @@
     <div slot="body" class="body">
         <RevisionHeader {revs} ignoreImmutable={$ignoreToggled} {added} {removed} />
 
-        {#if syntheticChanges.length > 0}
+        {#if singleton}
+            <div class="tabs" role="tablist">
+                <button role="tab" aria-selected={tab == "changes"} on:click={() => (tab = "changes")}>Changes</button>
+                <button role="tab" aria-selected={tab == "history"} on:click={() => (tab = "history")}>History</button>
+            </div>
+        {/if}
+
+        {#if tab == "history"}
+            <EvologView header={newest} ignoreImmutable={$ignoreToggled} />
+        {:else if syntheticChanges.length > 0}
             <div class="changes">
                 {#each shownChanges as change (change.path.repo_path)}
                     <div class="change">
@@ -75,6 +99,29 @@
 
     .body::-webkit-scrollbar-track {
         background-color: var(--ctp-crust);
+    }
+
+    .tabs {
+        display: flex;
+        gap: 3px;
+        padding: 3px 0;
+        border-top: 1px solid var(--ju-colors-outline);
+    }
+
+    .tabs button {
+        border: none;
+        background: transparent;
+        color: var(--ju-colors-foregroundMuted);
+        font: inherit;
+        font-size: 13px;
+        padding: 2px 8px;
+        border-radius: var(--ju-components-radiusSm);
+        cursor: pointer;
+    }
+
+    .tabs button[aria-selected="true"] {
+        color: inherit;
+        background: var(--ju-colors-surfaceAlt);
     }
 
     .changes-header {
