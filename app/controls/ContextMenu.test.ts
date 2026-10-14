@@ -190,4 +190,24 @@ describe("ContextMenu (hunk)", () => {
         const { container } = render(ContextMenu, { props: { operand, x: 0, y: 0, onClose: () => {} } });
         expect(find(container, "Move to working copy")).toBeUndefined();
     });
+
+    it("shows a file's history", async () => {
+        const { default: ContextMenu } = await import("./ContextMenu.svelte");
+        const { logQueryRequest, selectedFile } = await import("../stores");
+        const { get } = await import("svelte/store");
+        let operand: Operand = { type: "Change", headers: [mockHeader], path, hunk: null };
+        const { container } = render(ContextMenu, { props: { operand, x: 0, y: 0, onClose: () => {} } });
+
+        find(container, "Show history")!.click();
+
+        expect(get(logQueryRequest)).toBe(`files(root-file:"${path.repo_path}")`);
+        expect(get(selectedFile)).toEqual({ path: path.repo_path });
+    });
+});
+
+describe("fileHistoryRevset", () => {
+    it("escapes quotes and backslashes", async () => {
+        const { fileHistoryRevset } = await import("../mutators/ChangeMutator");
+        expect(fileHistoryRevset('a "b"\\c.txt')).toBe('files(root-file:"a \\"b\\"\\\\c.txt")');
+    });
 });

@@ -7,10 +7,16 @@ import type { MoveChanges } from "../messages/MoveChanges";
 import type { MoveHunk } from "../messages/MoveHunk";
 import type { TreePath } from "../messages/TreePath";
 import { mutate } from "../ipc";
-import { repoStatusEvent } from "../stores";
+import { logQueryRequest, repoStatusEvent, selectedFile } from "../stores";
 import { get } from "svelte/store";
 
 export type MutationOptions = { ignoreImmutable?: boolean };
+
+// repo paths are matched literally; quote so spaces and revset syntax survive
+export function fileHistoryRevset(repoPath: string): string {
+    let escaped = repoPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `files(root-file:"${escaped}")`;
+}
 
 export default class ChangeMutator {
     #revisions: RevHeader[];
@@ -47,6 +53,9 @@ export default class ChangeMutator {
                 break;
             case "move_to_working_copy":
                 this.onMoveToWorkingCopy();
+                break;
+            case "show_history":
+                this.onShowHistory();
                 break;
             default:
                 console.log(`unimplemented mutation '${event}'`, this);
@@ -85,6 +94,12 @@ export default class ChangeMutator {
             path: this.#path,
             hunk: this.#hunk
         }, { ignoreImmutable: this.#ignoreImmutable });
+    };
+
+    // pinning the path makes each selected revision open on this file's diff
+    onShowHistory = () => {
+        logQueryRequest.set(fileHistoryRevset(this.#path.repo_path));
+        selectedFile.set({ path: this.#path.repo_path });
     };
 
     onRestore = () => {
