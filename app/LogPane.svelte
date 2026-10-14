@@ -3,52 +3,21 @@
     import type { LogRow } from "./messages/LogRow.js";
     import type { RevHeader } from "./messages/RevHeader";
     import type { RevSet } from "./messages/RevSet";
-    import { getInput, query, trigger } from "./ipc.js";
+    import { query } from "./ipc.js";
     import { sameChange } from "./ids.js";
     import { ignoreToggled, logQueryRequest, repoStatusEvent, revisionSelectEvent } from "./stores.js";
     import RevisionMutator from "./mutators/RevisionMutator.js";
     import Pane from "./shell/Pane.svelte";
     import RevisionObject from "./objects/RevisionObject.svelte";
-    import ActionWidget from "./controls/ActionWidget.svelte";
-    import Icon from "./controls/Icon.svelte";
-    import SelectWidget from "./controls/SelectWidget.svelte";
+    import RevsetSection from "./log/RevsetSection.svelte";
     import ListWidget, { type List, type Selection } from "./controls/ListWidget.svelte";
     import { type EnhancedRow, default as GraphLog, type EnhancedLine } from "./GraphLog.svelte";
 
     export let query_choices: Record<string, string>;
     export let latest_query: string;
 
-    function toTitleCase(kebab: string): string {
-        return kebab
-            .split("-")
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(" ");
-    }
-
-    $: presets = (() => {
-        let result: { label: string; value: string; separator?: boolean }[] = [];
-
-        // revsets.log first
-        if (query_choices["default"] !== undefined) {
-            result.push({ label: "Default", value: query_choices["default"] });
-        }
-
-        // followed by [gg.presets]
-        let others = Object.entries(query_choices)
-            .filter(([key]) => key !== "default")
-            .map(([key, value]) => ({ label: toTitleCase(key), value }))
-            .sort((a, b) => a.label.localeCompare(b.label));
-
-        if (others.length > 0) {
-            result.push({ label: "", value: "", separator: true });
-            result.push(...others);
-        }
-
-        return result;
-    })();
-
-    let choices: ReturnType<typeof getChoices>;
     let entered_query = latest_query;
+    let queryError: string | null = null;
     let graphRows: EnhancedRow[] | undefined;
 
     let selectionAnchorIdx: number | undefined; // selection model is topologically ordered, selection view requires an anchor point
@@ -115,8 +84,6 @@
             }
         },
     };
-
-    $: choices = getChoices(entered_query, presets);
 
     // dedupe repoStatusEvent — it fires multiple times during the startup handshake
     // with identical content. first change drives the initial fast-path load; later
@@ -233,60 +200,6 @@
         setSelection(undefined, limitIdx); // keep anchor, extend to limit
     }
 
-    function getChoices(query: string, presetList: typeof presets) {
-        for (let choice of presetList) {
-            if (query == choice.value) {
-                return presetList;
-            }
-        }
-
-        return [{ label: "Custom", value: query }, ...presetList];
-    }
-
-    $: isCustom = !presets.some((p) => !p.separator && p.value === entered_query);
-
-    $: isDeletable =
-        !isCustom && presets.some((p) => !p.separator && p.value === entered_query && p.label !== "Default");
-
-    function toKebabCase(text: string): string {
-        return text
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9-]/g, "");
-    }
-
-    async function handleSavePreset() {
-        let response = await getInput("Save Revset", "code:" + entered_query, [
-            { label: "Preset Name", choices: [] },
-            { label: "Save globally", choices: ["false", "true"] },
-        ]);
-        if (!response) return;
-
-        let name = toKebabCase(response["Preset Name"]);
-        if (!name || name === "default") return;
-
-        let scope = response["Save globally"] === "true" ? "user" : "repo";
-        query_choices[name] = entered_query;
-        query_choices = query_choices;
-        trigger("write_config_entry", { scope, key: ["gg", "presets", name], value: entered_query });
-    }
-
-    function handleDeletePreset() {
-        let keyToDelete = Object.entries(query_choices).find(
-            ([key, value]) => key !== "default" && value === entered_query,
-        )?.[0];
-        if (!keyToDelete) return;
-
-        delete query_choices[keyToDelete];
-        query_choices = query_choices;
-        entered_query = query_choices["default"] ?? "";
-        // attempt deletion from both scopes; one will be a no-op
-        trigger("delete_config_entry", { scope: "repo", key: ["gg", "presets", keyToDelete] });
-        trigger("delete_config_entry", { scope: "user", key: ["gg", "presets", keyToDelete] });
-        reloadLog();
-    }
-
     // epoch-based cancellation: a new loadLog bumps the epoch, discarding any
     // in-flight page from a previous call. prevents startup races where repeated
     // repoStatusEvents would concurrently mutate graphRows and the shared
@@ -310,6 +223,7 @@
         );
         if (epoch !== loadEpoch) return;
 
+        queryError = page.type == "error" ? page.message : null;
         if (page.type == "data") {
             graphRows = [];
             graphRows = addPageToGraph(graphRows, page.value.rows);
@@ -430,23 +344,8 @@
 </script>
 
 <Pane>
-    <div slot="header" class="log-selector">
-        <div class="title">Revset</div>
-        <div class="selector-row">
-            <SelectWidget options={choices} bind:value={entered_query} on:change={reloadLog}>
-                <svelte:fragment let:option>{option.label}</svelte:fragment>
-            </SelectWidget>
-            {#if isCustom}
-                <ActionWidget secondary tip="Save revset" onClick={handleSavePreset}>
-                    <Icon name="save" /> Save
-                </ActionWidget>
-            {:else if isDeletable}
-                <ActionWidget secondary tip="Delete revset" onClick={handleDeletePreset}>
-                    <Icon name="trash-2" state="remove" /> <span class="delete">Delete</span>
-                </ActionWidget>
-            {/if}
-        </div>
-        <input type="text" bind:value={entered_query} on:change={reloadLog} autocorrect="off" autocapitalize="none" spellcheck="false" />
+    <div slot="header">
+        <RevsetSection {query_choices} bind:value={entered_query} error={queryError} onSubmit={reloadLog} />
     </div>
 
     <ListWidget
@@ -482,43 +381,6 @@
 </Pane>
 
 <style>
-    .log-selector {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .selector-row {
-        display: flex;
-        gap: 4px;
-
-        & :global(.wrapper) {
-            flex: 1;
-        }
-    }
-
-    .delete {
-        color: var(--ju-colors-error);
-    }
-
-     /* override some ListWidget styles */
-    .title {
-        font-family: var(--ju-text-familyUi);
-        font-size: 0.8em;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: var(--ju-colors-foregroundSubtle);
-        padding: 2px 3px;
-    }
-
-    input {
-        font-family: var(--ju-text-familyCode);
-        font-size: 14px;
-        width: 100%;
-        box-sizing: border-box;
-        margin: 3px 0;
-    }
-
     .log-entry {
         padding-left: 24px;
     }
