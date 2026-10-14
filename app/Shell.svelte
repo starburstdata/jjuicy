@@ -31,6 +31,7 @@
     import Zone from "./objects/Zone.svelte";
     import StatusBar from "./shell/StatusBar.svelte";
     import Header from "./shell/Header.svelte";
+    import { macOverlay, TITLE_ROW_HEIGHT } from "./shell/chrome";
     import ModalOverlay from "./shell/ModalOverlay.svelte";
     import ErrorDialog from "./shell/ErrorDialog.svelte";
 
@@ -312,7 +313,7 @@
 </script>
 
 <Zone operand={{ type: "Repository" }} alwaysTarget let:target>
-    <div id="shell">
+    <div id="shell" style="--shell-header-height: calc(var(--ju-components-toolbarHeight) + {macOverlay ? TITLE_ROW_HEIGHT : 0}px)">
         <Header config={$repoConfigEvent} />
 
         {#if $repoConfigEvent.type == "Initial"}
@@ -419,7 +420,7 @@
 
         display: grid;
         grid-template-columns: 1fr;
-        grid-template-rows: var(--ju-components-headerHeight) 1fr var(--ju-components-separatorWidth) 30px;
+        grid-template-rows: var(--shell-header-height) 1fr var(--ju-components-separatorWidth) 30px;
         grid-template-areas:
             "header"
             "content"

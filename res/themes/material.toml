@@ -163,8 +163,7 @@ borderSubtle = "1px solid $colors.outline"
 borderDialog = "none"
 separatorWidth = "1px"
 
-headerHeight = "48px"
-toolbarHeight = "38px"
+toolbarHeight = "44px"
 
 surfacePadding = "8px"
 surfacePaddingLg = "16px"
@@ -340,8 +339,7 @@ borderSubtle = "1px solid $colors.outline"
 borderDialog = "none"
 separatorWidth = "1px"
 
-headerHeight = "48px"
-toolbarHeight = "38px"
+toolbarHeight = "44px"
 
 surfacePadding = "8px"
 surfacePaddingLg = "16px"

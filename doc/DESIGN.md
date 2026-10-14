@@ -18,9 +18,11 @@ The UI uses a couple of key conventions for discoverability:
 Layout
 ------
 The window is a header, a body and a status bar (`app/Shell.svelte`).
-- The header (`app/shell/Header.svelte`) holds repo-level actions: sidebar and file list toggles, refresh,
-  fetch/push, the repo/workspace breadcrumb, terminal and settings. It doubles as the window's
-  drag region, so interactive children must opt back in to pointer events.
+- The toolbar (`app/shell/Header.svelte`) holds repo-level actions as labelled buttons: sidebar
+  and file list toggles, the workspace switcher (a rounded popup), refresh, fetch/push, terminal
+  and settings. On macOS the window uses an overlay title bar and the header draws the title row
+  itself, so title and toolbar read as one unit; the whole header is a drag region. Toolbar
+  menus share the bookmarks dropdown's look.
 - Themes live in `res/themes/`; `macos.toml` is the default, and other theme files inherit any
   token they omit from it.
 - The body is built from `SplitView` panes (`app/shell/SplitView.svelte`), whose sizes persist.

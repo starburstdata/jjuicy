@@ -1161,7 +1161,7 @@ pub fn try_create_window(
     .disable_drag_drop_handler()
     .initialization_script(&init_script);
 
-    // the header doubles as the title bar; it leaves room for the traffic lights
+    // the header draws the title row itself, under the traffic lights
     #[cfg(target_os = "macos")]
     let window = window
         .title_bar_style(tauri::TitleBarStyle::Overlay)

@@ -163,8 +163,7 @@ borderSubtle = "1px solid rgba(209, 209, 209, 0.6)"
 borderDialog = "1px solid $colors.surfaceAlt"
 separatorWidth = "1px"
 
-headerHeight = "40px"
-toolbarHeight = "38px"
+toolbarHeight = "44px"
 
 surfacePadding = "8px"
 surfacePaddingLg = "16px"
@@ -340,8 +339,7 @@ borderSubtle = "1px solid rgba(82, 82, 82, 0.6)"
 borderDialog = "1px solid $colors.surfaceAlt"
 separatorWidth = "1px"
 
-headerHeight = "40px"
-toolbarHeight = "38px"
+toolbarHeight = "44px"
 
 surfacePadding = "8px"
 surfacePaddingLg = "16px"

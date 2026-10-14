@@ -114,7 +114,7 @@
     #op-log {
         z-index: 1;
         position: absolute;
-        top: var(--ju-components-headerHeight);
+        top: var(--shell-header-height, var(--ju-components-toolbarHeight));
         right: 0;
         bottom: 33px;
         width: min(420px, 90vw);
