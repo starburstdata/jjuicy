@@ -237,3 +237,31 @@ pub struct RemoteBookmarkState {
     pub ahead: Option<u32>,
     pub behind: Option<u32>,
 }
+
+/// One entry in the operation log, newest first.
+#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct OpLogEntry {
+    pub id: String,
+    pub description: String,
+    /// When the operation finished.
+    pub time: chrono::DateTime<Local>,
+    pub user: String,
+    pub host: String,
+    /// The operation the workspace is loaded at.
+    pub is_current: bool,
+}
+
+impl OpLogEntry {
+    pub fn new(op: &Operation, is_current: bool) -> Result<OpLogEntry> {
+        let metadata = op.metadata();
+        Ok(OpLogEntry {
+            id: op.id().hex(),
+            description: metadata.description.clone(),
+            time: format_timestamp(&metadata.time.end)?.with_timezone(&Local),
+            user: metadata.username.clone(),
+            host: metadata.hostname.clone(),
+            is_current,
+        })
+    }
+}

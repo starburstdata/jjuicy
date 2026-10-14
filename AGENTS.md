@@ -166,6 +166,7 @@ Use `let` instead of `const` for variable declarations.
 - `app/detail/DetailPane.svelte` - Revision detail: header, actions, parents, changes (`app/detail/`)
 - `app/diff/DiffViewer.svelte` - Per-file diff: unified/split rows, context expansion, conflicts, highlighting (`app/diff/`)
 - `app/log/BookmarkSection.svelte` - Bookmark list in the log column, ahead/behind badges, cleanup
+- `app/oplog/OpLogPanel.svelte` - Operation log slide-over: view at op (read-only), restore
 - `app/perf.ts` - selection→paint `performance.measure` marks
 - `app/mutators/BinaryMutator.ts` - All drag-drop policies
 - `app/mutators/enablement.ts` - Revision action enablement; must match `src/gui/menu.rs`

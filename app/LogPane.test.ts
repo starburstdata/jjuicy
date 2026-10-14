@@ -4,6 +4,7 @@ import type { LogPage } from "./messages/LogPage";
 import { setupMocks, cleanupMocks } from "./mocks";
 
 let revsets: string[] = [];
+let viewed: unknown[] = [];
 
 const choices = { default: "all()", mine: "mine()" };
 
@@ -22,6 +23,14 @@ describe("LogPane", () => {
             if (cmd === "query_bookmarks") {
                 return [];
             }
+            if (cmd === "view_operation") {
+                viewed.push((args as { id: unknown }).id);
+                return {
+                    operation_description: "head",
+                    working_copy: { type: "CommitId", hex: "0".repeat(40), prefix: "0000000", rest: "0".repeat(33) },
+                    summary: null,
+                };
+            }
             return undefined;
         });
     });
@@ -34,6 +43,7 @@ describe("LogPane", () => {
         cleanup();
         localStorage.clear();
         revsets = [];
+        viewed = [];
     });
 
     it("renders loading state", async () => {
@@ -125,5 +135,24 @@ describe("LogPane", () => {
         let second = render(LogPane, { props: { query_choices: choices, latest_query: "all()" } });
         expect(second.container.querySelector("textarea")).toBeNull();
         expect(second.getByTitle("Expand revset")).toBeTruthy();
+    });
+
+    it("shows a read-only banner while viewing a past operation", async () => {
+        let { default: LogPane } = await import("./LogPane.svelte");
+        let { repoStatusEvent } = await import("./stores");
+        let { container, getByText } = render(LogPane, { props: { query_choices: choices, latest_query: "all()" } });
+
+        repoStatusEvent.set({
+            operation_description: "old",
+            working_copy: { type: "CommitId", hex: "0".repeat(40), prefix: "0000000", rest: "0".repeat(33) },
+            summary: null,
+            at_operation: "f".repeat(128),
+        });
+        await waitFor(() => expect(container.querySelector(".readonly-banner")).not.toBeNull());
+        expect(container.querySelector(".readonly-banner code")!.textContent).toBe("f".repeat(12));
+
+        await fireEvent.click(getByText("Return to current"));
+        await waitFor(() => expect(container.querySelector(".readonly-banner")).toBeNull());
+        expect(viewed).toEqual([null]);
     });
 });

@@ -5,6 +5,7 @@ use std::{
     iter::{Peekable, Skip},
     mem,
     ops::Range,
+    slice,
 };
 
 use anyhow::{Result, anyhow};
@@ -34,6 +35,7 @@ use jj_lib::{
     merge::{Diff, SameChange},
     merged_tree::MergedTree,
     op_store::RefTarget,
+    op_walk,
     ref_name::{RefNameBuf, RemoteNameBuf, RemoteRefSymbol},
     repo::Repo,
     repo_path::RepoPath,
@@ -733,6 +735,18 @@ pub async fn query_file_lines(
         .take(end - start + 1)
         .map(|line| line.to_owned())
         .collect())
+}
+
+pub fn query_op_log(ws: &WorkspaceSession, limit: u32, offset: u32) -> Result<Vec<OpLogEntry>> {
+    let current = ws.repo().operation();
+    op_walk::walk_ancestors(slice::from_ref(ws.head_operation()))
+        .skip(offset as usize)
+        .take(limit as usize)
+        .map(|op| {
+            let op = op?;
+            OpLogEntry::new(&op, op.id() == current.id())
+        })
+        .collect()
 }
 
 /// ahead/behind counts stop here; the ui shows "100+"

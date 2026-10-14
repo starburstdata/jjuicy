@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::messages::{
     RepoConfig, RepoStatus, RevSet, TreePath,
-    queries::{BookmarkEntry, FileDiff, FileSide, LogPage, RevsResult},
+    queries::{BookmarkEntry, FileDiff, FileSide, LogPage, OpLogEntry, RevsResult},
 };
 use crate::worker::SessionEvent;
 
@@ -25,6 +25,8 @@ pub fn router() -> Router<AppState> {
         .route("/query_file_lines", post(query_file_lines))
         .route("/query_remotes", post(query_remotes))
         .route("/query_bookmarks", post(query_bookmarks))
+        .route("/query_op_log", post(query_op_log))
+        .route("/view_operation", post(view_operation))
         .route("/query_recent_workspaces", post(query_recent_workspaces))
         .route("/query_snapshot", post(query_snapshot))
 }
@@ -177,6 +179,43 @@ async fn query_bookmarks(
 ) -> Result<Json<Vec<BookmarkEntry>>, ApiError> {
     let (tx, rx) = channel();
     state.worker_tx.send(SessionEvent::QueryBookmarks { tx })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct QueryOpLog {
+    limit: u32,
+    offset: u32,
+}
+
+async fn query_op_log(
+    State(state): State<AppState>,
+    Json(req): Json<QueryOpLog>,
+) -> Result<Json<Vec<OpLogEntry>>, ApiError> {
+    let (tx, rx) = channel();
+    state.worker_tx.send(SessionEvent::QueryOpLog {
+        tx,
+        limit: req.limit,
+        offset: req.offset,
+    })?;
+    let result = rx.recv()??;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct ViewOperation {
+    id: Option<String>,
+}
+
+async fn view_operation(
+    State(state): State<AppState>,
+    Json(req): Json<ViewOperation>,
+) -> Result<Json<RepoStatus>, ApiError> {
+    let (tx, rx) = channel();
+    state
+        .worker_tx
+        .send(SessionEvent::ViewOperation { tx, id: req.id })?;
     let result = rx.recv()??;
     Ok(Json(result))
 }

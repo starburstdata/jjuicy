@@ -24,6 +24,7 @@ use jj_lib::{
     merge::SameChange,
     merged_tree::MergedTree,
     object_id::ObjectId as ObjectIdTrait,
+    op_store::View as StoreView,
     op_walk,
     ref_name::WorkspaceNameBuf,
     ref_name::{GitRefNameBuf, RefNameBuf, RemoteName, RemoteNameBuf, RemoteRefSymbol},
@@ -47,7 +48,7 @@ use super::{
 
 use crate::messages::mutations::{
     ExternalDiff, ExternalResolve, ForgetWorkspace, GitFetch, GitPush, GitRefspec, MutationOptions,
-    MutationResult, RenameWorkspace, UndoOperation,
+    MutationResult, RenameWorkspace, RestoreOperation, UndoOperation,
 };
 
 macro_rules! precondition {
@@ -648,6 +649,56 @@ impl Mutation for UndoOperation {
 }
 
 #[async_trait(?Send)]
+impl Mutation for RestoreOperation {
+    async fn execute(
+        self: Box<Self>,
+        ws: &mut WorkspaceSession,
+        _options: &MutationOptions,
+    ) -> Result<MutationResult> {
+        let mut tx = ws.start_transaction().await?;
+
+        let target_op = match op_walk::resolve_op_with_repo(ws.repo(), &self.id) {
+            Ok(op) => op,
+            Err(err) => precondition!("{err}"),
+        };
+        if target_op.id() == ws.op_id() {
+            precondition!("Already at this operation");
+        }
+
+        // jj op restore's default: repo and remote-tracking state, but git refs stay current
+        // so the next import doesn't see them as changed
+        let target_view = target_op.view().await?;
+        let target_view = target_view.store_view();
+        let current_view = tx.base_repo().view().store_view();
+        let restored_view = StoreView {
+            head_ids: target_view.head_ids.clone(),
+            local_bookmarks: target_view.local_bookmarks.clone(),
+            local_tags: target_view.local_tags.clone(),
+            remote_views: target_view.remote_views.clone(),
+            git_refs: current_view.git_refs.clone(),
+            git_head: current_view.git_head.clone(),
+            wc_commit_ids: target_view.wc_commit_ids.clone(),
+        };
+        tx.repo_mut().set_view(restored_view);
+
+        match ws
+            .finish_transaction(tx, format!("restore to operation {}", target_op.id().hex()))
+            .await?
+        {
+            Some(new_status) => {
+                let working_copy = ws.get_commit(ws.wc_id())?;
+                let new_selection = Some(ws.format_header(&working_copy, None)?);
+                Ok(MutationResult::Updated {
+                    new_status,
+                    new_selection,
+                })
+            }
+            None => Ok(MutationResult::Unchanged),
+        }
+    }
+}
+
+#[async_trait(?Send)]
 impl Mutation for ForgetWorkspace {
     async fn execute(
         self: Box<Self>,
@@ -1204,6 +1255,54 @@ auto-track = "glob:*.txt"
         .await?;
 
         assert_matches!(result, MutationResult::PreconditionError { message } if message.contains("current workspace"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn restore_operation() -> Result<()> {
+        let repo = mkrepo();
+
+        let mut session = WorkerSession::default();
+        let mut ws = session.load_workspace(repo.path()).await?;
+
+        let before = ws.op_id().clone();
+        let before_rows = queries::query_log(&ws, "all()", 100)?.rows.len();
+
+        CreateRevision {
+            set: RevSet::singleton(revs::working_copy()),
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+        assert_eq!(
+            before_rows + 1,
+            queries::query_log(&ws, "all()", 100)?.rows.len()
+        );
+
+        let ops = queries::query_op_log(&ws, 10, 0)?;
+        assert!(ops[0].is_current);
+        assert_eq!(before.hex(), ops[1].id);
+        assert!(!ops[1].is_current);
+
+        let result = RestoreOperation { id: before.hex() }
+            .execute_unboxed(&mut ws)
+            .await?;
+        assert_matches!(result, MutationResult::Updated { .. });
+        assert_ne!(before, *ws.op_id());
+        assert_eq!(
+            before_rows,
+            queries::query_log(&ws, "all()", 100)?.rows.len()
+        );
+
+        let ops = queries::query_op_log(&ws, 1, 0)?;
+        assert!(ops[0].description.starts_with("restore to operation"));
+
+        let result = RestoreOperation {
+            id: "not-an-op".to_owned(),
+        }
+        .execute_unboxed(&mut ws)
+        .await?;
+        assert_matches!(result, MutationResult::PreconditionError { .. });
 
         Ok(())
     }

@@ -2,4 +2,4 @@
 import type { CommitId } from "./CommitId";
 import type { RepoSummary } from "./RepoSummary";
 
-export interface RepoStatus { operation_description: string, working_copy: CommitId, summary: RepoSummary | null, }
+export interface RepoStatus { operation_description: string, working_copy: CommitId, summary: RepoSummary | null, at_operation?: string, }

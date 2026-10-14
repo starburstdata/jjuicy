@@ -14,6 +14,8 @@ use std::{collections::HashMap, path::Path};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc, offset::LocalResult};
 use jj_lib::backend::{Signature, Timestamp};
+use jj_lib::object_id::ObjectId;
+use jj_lib::operation::Operation;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-rs")]
 use ts_rs::TS;
@@ -250,6 +252,10 @@ pub struct RepoStatus {
     pub working_copy: CommitId,
     /// None when the repo is too large to compute it cheaply
     pub summary: Option<RepoSummary>,
+    /// Set while viewing a past operation read-only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-rs", ts(optional))]
+    pub at_operation: Option<String>,
 }
 
 /// Status bar counters. Revset counts are capped at [`RepoSummary::COUNT_LIMIT`].
