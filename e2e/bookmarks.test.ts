@@ -28,11 +28,13 @@ describe("bookmark section", () => {
         await expect
             .poll(() => page.locator('.log-entry button[aria-selected="true"]').getAttribute("aria-label"), { timeout: 10000 })
             .toMatch(/^rename c\.txt/);
+        await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("false");
 
         // narrow the log so main falls outside it
         let input = page.locator("textarea");
         await input.fill("@");
         await input.press("Enter");
+        await toggle.click();
         let showInLog = page.locator('[data-bookmark="main"] .link');
         await showInLog.waitFor({ timeout: 10000 });
         await showInLog.click();

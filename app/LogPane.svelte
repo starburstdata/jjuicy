@@ -6,7 +6,6 @@
     import { query } from "./ipc.js";
     import { sameChange } from "./ids.js";
     import {
-        bookmarksExpanded,
         ignoreToggled,
         logDensity,
         logQueryRequest,
@@ -118,9 +117,20 @@
     }
 
     let bookmarkCount = 0;
+    let bookmarksOpen = false;
+    let bookmarksAnchor: HTMLElement;
+
+    function onWindowClick(event: MouseEvent) {
+        if (bookmarksOpen && !bookmarksAnchor.contains(event.target as Node)) bookmarksOpen = false;
+    }
+
+    function onWindowKey(event: KeyboardEvent) {
+        if (bookmarksOpen && event.key == "Escape") bookmarksOpen = false;
+    }
     let listWidget: ListWidget;
 
     function revealBookmark(header: RevHeader) {
+        bookmarksOpen = false;
         let idx = rowIdxByHex.get(header.id.commit.hex);
         if (idx === undefined) return;
         setSelection(idx, idx);
@@ -128,6 +138,7 @@
     }
 
     function showInLog(header: RevHeader) {
+        bookmarksOpen = false;
         $logQueryRequest = withRevision(entered_query == "" ? "all()" : entered_query, header.id.commit.hex);
         pendingReveal = header.id.commit.hex;
     }
@@ -380,6 +391,8 @@
     }
 </script>
 
+<svelte:window on:click={onWindowClick} on:keydown={onWindowKey} />
+
 <Pane>
     <div slot="header">
         {#if $repoStatusEvent?.at_operation}
@@ -390,28 +403,29 @@
             </div>
         {/if}
         <RevsetSection {query_choices} bind:value={entered_query} error={queryError} onSubmit={reloadLog} />
-        <div class="column-header">
+        <div class="column-header" bind:this={bookmarksAnchor}>
             {#if bookmarkCount > 0}
                 <button
                     class="bookmarks-toggle"
-                    aria-expanded={$bookmarksExpanded}
-                    on:click={() => ($bookmarksExpanded = !$bookmarksExpanded)}>
+                    aria-haspopup="dialog"
+                    aria-expanded={bookmarksOpen}
+                    on:click={() => (bookmarksOpen = !bookmarksOpen)}>
                     <Icon name="bookmark" />
                     <span>Bookmarks {formatCount(bookmarkCount)}</span>
-                    <Icon name={$bookmarksExpanded ? "chevron-up" : "chevron-down"} />
+                    <Icon name="chevron-down" />
                 </button>
             {/if}
             {#if graphRows}
                 <span class="row-count">{formatCount(graphRows.length)} {graphRows.length == 1 ? "change" : "changes"}</span>
             {/if}
-        </div>
-        <!-- kept mounted while collapsed so the toggle's count stays current -->
-        <div class="bookmark-section" class:collapsed={!$bookmarksExpanded}>
-            <BookmarkSection
-                bind:count={bookmarkCount}
-                loaded={rowIdxByHex}
-                onReveal={revealBookmark}
-                onShowInLog={showInLog} />
+            <!-- kept mounted while closed so the toggle's count stays current -->
+            <div class="bookmarks-dropdown" class:collapsed={!bookmarksOpen} role="dialog" aria-label="Bookmarks">
+                <BookmarkSection
+                    bind:count={bookmarkCount}
+                    loaded={rowIdxByHex}
+                    onReveal={revealBookmark}
+                    onShowInLog={showInLog} />
+            </div>
         </div>
     </div>
 
@@ -455,6 +469,7 @@
     }
 
     .column-header {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -487,6 +502,26 @@
             width: 12px;
             min-width: 12px;
         }
+    }
+
+    .bookmarks-toggle[aria-expanded="true"] {
+        background: var(--ju-colors-surface);
+        color: var(--ju-colors-foreground);
+    }
+
+    .bookmarks-dropdown {
+        position: absolute;
+        top: calc(100% + 2px);
+        left: 0;
+        right: 0;
+        z-index: 100;
+        pointer-events: auto;
+        padding: 2px 4px;
+        background: var(--ju-colors-background);
+        border: 1px solid var(--ju-colors-surfaceStrong);
+        border-radius: var(--ju-components-radiusSm);
+        box-shadow: var(--ju-shadows-shadowMd);
+        color: var(--ju-colors-foreground);
     }
 
     .readonly-banner {

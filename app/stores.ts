@@ -70,8 +70,6 @@ export function persisted<T>(key: string, initial: T) {
 }
 
 export const sidebarCollapsed = persisted<boolean>("jjuicy.sidebarCollapsed", false);
-// the log column header owns the toggle
-export const bookmarksExpanded = persisted<boolean>("jjuicy.bookmarksExpanded", false);
 export const filesView = persisted<"list" | "tree">("jjuicy.filesView", "list");
 export const diffMode = persisted<"unified" | "split">("jjuicy.diffMode", "unified");
 export const annotateOn = persisted<boolean>("jjuicy.annotate", false);
