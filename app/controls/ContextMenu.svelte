@@ -4,6 +4,7 @@
     import type { RevHeader } from "../messages/RevHeader";
     import type { StoreRef } from "../messages/StoreRef";
     import { ignoreToggled } from "../stores";
+    import { revisionEnablement } from "../mutators/enablement";
     import RevisionMutator from "../mutators/RevisionMutator";
     import ChangeMutator from "../mutators/ChangeMutator";
     import RefMutator from "../mutators/RefMutator";
@@ -67,24 +68,6 @@
         onClose();
     }
 
-    function isRevisionEnabled(headers: RevHeader[], ignoreImmutable: boolean = false) {
-        const isSingleton = headers.length == 1;
-        const anyImmutable = !ignoreImmutable && headers.some((h) => h.is_immutable);
-        const hasSingleParent = headers[headers.length - 1]?.parent_ids.length == 1;
-
-        return {
-            new_child: true,
-            new_parent: !anyImmutable && hasSingleParent,
-            edit: isSingleton && !anyImmutable && !headers[0]?.is_working_copy,
-            revert: true,
-            duplicate: true,
-            abandon: !anyImmutable,
-            squash: !anyImmutable && hasSingleParent,
-            restore: isSingleton && !anyImmutable && hasSingleParent,
-            bookmark: isSingleton,
-        };
-    }
-
     function isChangeEnabled(headers: RevHeader[], ignoreImmutable: boolean = false) {
         const anyImmutable = !ignoreImmutable && headers.some((h) => h.is_immutable);
         const hasSingleParent = headers[headers.length - 1]?.parent_ids.length == 1;
@@ -116,7 +99,7 @@
 
     $: revisionEnabled =
         operand.type === "Revision" || operand.type === "Revisions"
-            ? isRevisionEnabled(getRevisionHeaders(), $ignoreToggled)
+            ? revisionEnablement(getRevisionHeaders(), $ignoreToggled)
             : null;
     $: changeEnabled = operand.type === "Change" ? isChangeEnabled(operand.headers, $ignoreToggled) : null;
     $: refEnabled = operand.type === "Ref" ? isRefEnabled(operand.ref) : null;

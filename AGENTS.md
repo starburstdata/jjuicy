@@ -157,7 +157,9 @@ Use `let` instead of `const` for variable declarations.
 
 - `doc/DESIGN.md` - Core metaphors, layout, bookmark state machine
 - `app/Shell.svelte` - Window layout: header, SplitView panes, status bar (`app/shell/`)
+- `app/detail/DetailPane.svelte` - Revision detail: header, actions, parents, changes (`app/detail/`)
 - `app/mutators/BinaryMutator.ts` - All drag-drop policies
+- `app/mutators/enablement.ts` - Revision action enablement; must match `src/gui/menu.rs`
 - `app/ipc.ts` - IPC abstraction with runtime detection
 - `src/worker/mutations.rs` - All mutation implementations
 - `src/config/jjuicy.toml` - Default configuration with inline docs

@@ -3,9 +3,11 @@
 </script>
 
 <section inert={$hasModal}>
-    <div class="header">
-        <slot name="header" />
-    </div>
+    {#if $$slots.header}
+        <div class="header">
+            <slot name="header" />
+        </div>
+    {/if}
     <div class="body">
         <slot name="body" />
     </div>
