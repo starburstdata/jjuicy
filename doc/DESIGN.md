@@ -18,7 +18,7 @@ The UI uses a couple of key conventions for discoverability:
 Layout
 ------
 The window is a header, a body and a status bar (`app/Shell.svelte`).
-- The header (`app/shell/Header.svelte`) holds repo-level actions: sidebar toggle, refresh,
+- The header (`app/shell/Header.svelte`) holds repo-level actions: sidebar and file list toggles, refresh,
   fetch/push, the repo/workspace breadcrumb, terminal and settings. It doubles as the window's
   drag region, so interactive children must opt back in to pointer events.
 - The body is built from `SplitView` panes (`app/shell/SplitView.svelte`), whose sizes persist.
@@ -45,6 +45,8 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   detail pane share one `selectedFile` store; each resolves it against its own revisions, so a
   file stays selected across revisions that touch it and falls back to the first file otherwise.
   File rows are `ChangeObject`s, so they remain drag sources for moving changes between revisions.
+  The log and files columns collapse independently (`sidebarCollapsed`, `filesCollapsed`), so a
+  diff can take the whole window.
 - The detail pane ends in the diff viewer (`app/diff/DiffViewer.svelte`), which fetches one
   file at a time with `query_file_diff`; revision queries only carry per-file summaries. Hunk
   headers are `HunkObject`s, so hunks drag onto revisions like files do. "All files" stacks a

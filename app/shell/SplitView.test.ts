@@ -57,8 +57,13 @@ describe("persistence", () => {
 
 describe("gridTemplate", () => {
     it("omits collapsed columns and their separators", () => {
-        let template = gridTemplate({ sizes: [0.2, 0.3, 0.5], collapsed: [true, false, false] }, [100, 100, 100]);
-        expect(template).toBe("minmax(100px, 0.3fr) var(--ju-components-separatorWidth) minmax(100px, 0.5fr)");
+        let template = gridTemplate({ sizes: [0.5, 0.25, 0.25], collapsed: [true, false, false] }, [100, 100, 100]);
+        expect(template).toBe("minmax(100px, 0.5fr) var(--ju-components-separatorWidth) minmax(100px, 0.5fr)");
+    });
+
+    it("gives a lone visible pane the full width", () => {
+        let template = gridTemplate({ sizes: [0.25, 0.25, 0.5], collapsed: [true, true, false] }, [100, 100, 100]);
+        expect(template).toBe("minmax(100px, 1fr)");
     });
 });
 

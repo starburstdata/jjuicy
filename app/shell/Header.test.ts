@@ -91,6 +91,17 @@ describe("Header", () => {
         expect(get(sidebarCollapsed)).toBe(true);
     });
 
+    it("toggles the file list", async () => {
+        let { default: Header } = await import("./Header.svelte");
+        let { filesCollapsed } = await import("../stores");
+        filesCollapsed.set(false);
+        let { getByTitle } = render(Header, { props: { config: workspace([]) } });
+        await fireEvent.click(getByTitle("Hide file list"));
+        expect(get(filesCollapsed)).toBe(true);
+        await fireEvent.click(getByTitle("Show file list"));
+        expect(get(filesCollapsed)).toBe(false);
+    });
+
     it("lists other recent workspaces in the breadcrumb menu", async () => {
         let { default: Header } = await import("./Header.svelte");
         let { getByTitle, findByText, queryByText } = render(Header, { props: { config: workspace([]) } });
