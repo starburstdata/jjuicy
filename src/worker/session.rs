@@ -224,7 +224,7 @@ impl Session for WorkerSession {
                     ws.import_and_snapshot(false, true, SnapshotContention::Skip)
                         .await?;
 
-                    tx.send(ws.format_config())?;
+                    tx.send(ws.format_config().await)?;
 
                     match ws.handle_events(rx).await.context("WorkspaceSession")? {
                         WorkspaceResult::Reopen(new_tx, new_cwd) => (tx, wd) = (new_tx, new_cwd),
@@ -331,7 +331,7 @@ impl Session for WorkspaceSession<'_> {
                         .import_and_snapshot(false, auto_update_stale, SnapshotContention::Skip)
                         .await?;
                     if snapshotted || updated_head || *self.op_id() != op_before {
-                        tx.send(Some(self.format_status()))?;
+                        tx.send(Some(self.format_status().await))?;
                     } else {
                         tx.send(None)?;
                     }

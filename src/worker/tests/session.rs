@@ -903,3 +903,52 @@ async fn clone_workspace_checks_out_file_content() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn status_summary_counts() -> Result<()> {
+    let repo = mkrepo();
+    std::fs::write(repo.path().join("summary.txt"), "one\ntwo\nthree\n")?;
+
+    let (tx, rx) = channel::<SessionEvent>();
+    let (tx_load, rx_load) = channel::<Result<RepoConfig>>();
+    tx.send(SessionEvent::OpenWorkspace {
+        tx: tx_load,
+        wd: Some(repo.path().to_owned()),
+    })?;
+    tx.send(SessionEvent::EndSession)?;
+    WorkerSession::default().handle_events(&rx).await?;
+
+    let summary =
+        assert_matches!(rx_load.recv()??, RepoConfig::Workspace { status, .. } => status.summary);
+    let summary = summary.context("summary")?;
+    assert_eq!(1, summary.wc_files);
+    assert_eq!(3, summary.wc_added);
+    assert_eq!(0, summary.wc_removed);
+    assert!(summary.conflicted >= 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_summary_skipped_when_large() -> Result<()> {
+    let repo = mkrepo();
+    std::fs::write(
+        repo.path().join(".jj/repo/config.toml"),
+        "[jjuicy.queries]\nlarge-repo-heuristic = 1\n",
+    )?;
+
+    let (tx, rx) = channel::<SessionEvent>();
+    let (tx_load, rx_load) = channel::<Result<RepoConfig>>();
+    tx.send(SessionEvent::OpenWorkspace {
+        tx: tx_load,
+        wd: Some(repo.path().to_owned()),
+    })?;
+    tx.send(SessionEvent::EndSession)?;
+    WorkerSession::default().handle_events(&rx).await?;
+
+    let summary =
+        assert_matches!(rx_load.recv()??, RepoConfig::Workspace { status, .. } => status.summary);
+    assert_eq!(None, summary);
+
+    Ok(())
+}

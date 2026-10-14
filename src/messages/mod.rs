@@ -244,6 +244,23 @@ pub enum RepoConfig {
 pub struct RepoStatus {
     pub operation_description: String,
     pub working_copy: CommitId,
+    /// None when the repo is too large to compute it cheaply
+    pub summary: Option<RepoSummary>,
+}
+
+/// Status bar counters. Revset counts are capped at [`RepoSummary::COUNT_LIMIT`].
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct RepoSummary {
+    pub wc_files: u32,
+    pub wc_added: u32,
+    pub wc_removed: u32,
+    pub conflicted: u32,
+    pub divergent: u32,
+}
+
+impl RepoSummary {
+    pub const COUNT_LIMIT: usize = 100;
 }
 
 /// Events requiring user interaction during clone/init flows.

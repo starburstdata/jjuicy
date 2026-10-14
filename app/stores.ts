@@ -29,6 +29,8 @@ export const lastFocus = writable<number>(Date.now());
 export const ignoreToggled = writable<boolean>(false);
 
 export const selectionHeaders = writable<RevHeader[]>([]);
+// set by widgets outside the log pane (e.g. status bar counters) to replace the revset
+export const logQueryRequest = writable<string | null>(null);
 
 export function dragOverWidget(event: DragEvent) {
     event.stopPropagation();

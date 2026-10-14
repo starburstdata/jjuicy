@@ -15,6 +15,7 @@ use chrono::TimeZone;
 use itertools::Itertools;
 use jj_cli::{
     cli_util::{default_ignored_remote_name, short_operation_hash},
+    diff_util::{DiffStatOptions, DiffStats},
     git_util::{is_colocated_git_workspace, load_git_import_options},
     revset_util,
     ui::Ui,
@@ -22,6 +23,8 @@ use jj_cli::{
 use jj_lib::{
     backend::{BackendError, ChangeId, CommitId},
     commit::Commit,
+    conflicts::ConflictMarkerStyle,
+    copies::CopyRecords,
     default_index::DefaultReadonlyIndex,
     file_util,
     fileset::{self, FilesetAliasesMap, FilesetDiagnostics, FilesetParseContext},
@@ -29,7 +32,7 @@ use jj_lib::{
     git_backend::GitBackend,
     gitignore::GitIgnoreFile,
     id_prefix::{IdPrefixContext, IdPrefixIndex},
-    matchers::{Matcher, NothingMatcher},
+    matchers::{EverythingMatcher, Matcher, NothingMatcher},
     object_id::ObjectId,
     op_heads_store::{self, OpHeadsStore},
     op_store::OperationId,
@@ -328,7 +331,7 @@ impl WorkspaceSession<'_> {
         );
         locked_ws.finish(self.operation.repo.op_id().clone())?;
 
-        Ok(Some(self.format_status()))
+        Ok(Some(self.format_status().await))
     }
 
     pub fn list_workspaces(&self) -> Vec<String> {
@@ -777,7 +780,7 @@ impl WorkspaceSession<'_> {
      * IPC-message formatting functions *
      ************************************/
 
-    pub(crate) fn format_config(&self) -> Result<messages::RepoConfig> {
+    pub(crate) async fn format_config(&self) -> Result<messages::RepoConfig> {
         let absolute_path = self.workspace.workspace_root().into();
 
         let git_remotes = match self.git_repo() {
@@ -827,7 +830,7 @@ impl WorkspaceSession<'_> {
             git_remotes,
             query_choices,
             latest_query,
-            status: self.format_status(),
+            status: self.format_status().await,
             mark_unpushed_bookmarks: self.data.workspace_settings.ui_mark_unpushed_bookmarks(),
             track_recent_workspaces: self.data.workspace_settings.ui_track_recent_workspaces(),
             ignore_immutable: self.session.ignore_immutable,
@@ -836,7 +839,19 @@ impl WorkspaceSession<'_> {
         })
     }
 
-    pub(crate) fn format_status(&self) -> messages::RepoStatus {
+    pub(crate) async fn format_status(&self) -> messages::RepoStatus {
+        let summary = if self.is_large {
+            None
+        } else {
+            match self.format_summary().await {
+                Ok(summary) => Some(summary),
+                Err(err) => {
+                    log::warn!("format_summary: {err:#}");
+                    None
+                }
+            }
+        };
+
         messages::RepoStatus {
             operation_description: self
                 .operation
@@ -847,7 +862,47 @@ impl WorkspaceSession<'_> {
                 .description
                 .clone(),
             working_copy: self.format_commit_id(&self.operation.wc_id),
+            summary,
         }
+    }
+
+    async fn format_summary(&self) -> Result<messages::RepoSummary> {
+        let count = |revset_str: &str| -> Result<u32> {
+            let revset = self.evaluate_revset_str(revset_str)?;
+            let mut n = 0;
+            for id in revset.iter().take(messages::RepoSummary::COUNT_LIMIT) {
+                id?;
+                n += 1;
+            }
+            Ok(n)
+        };
+        let conflicted = count("conflicts()")?;
+        let divergent = count("divergent()")?;
+
+        let repo = self.operation.repo.as_ref();
+        let wc_commit = self.get_commit(&self.operation.wc_id)?;
+        let parent_tree = wc_commit.parent_tree(repo).await?;
+        let copy_records = CopyRecords::default();
+        let tree_diff = parent_tree.diff_stream_with_copies(
+            &wc_commit.tree(),
+            &EverythingMatcher,
+            &copy_records,
+        );
+        let stats = DiffStats::calculate(
+            repo.store(),
+            tree_diff,
+            &DiffStatOptions::default(),
+            ConflictMarkerStyle::Git,
+        )
+        .await?;
+
+        Ok(messages::RepoSummary {
+            wc_files: stats.entries().len() as u32,
+            wc_added: stats.count_total_added() as u32,
+            wc_removed: stats.count_total_removed() as u32,
+            conflicted,
+            divergent,
+        })
     }
 
     pub(crate) fn format_commit_id(&self, id: &CommitId) -> messages::CommitId {
@@ -1121,7 +1176,7 @@ impl WorkspaceSession<'_> {
                 .await?;
         }
 
-        Ok(Some(self.format_status()))
+        Ok(Some(self.format_status().await))
     }
 
     pub(crate) async fn import_and_snapshot(

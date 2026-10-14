@@ -153,7 +153,8 @@ Use `let` instead of `const` for variable declarations.
 
 ## Key Files Reference
 
-- `DESIGN.md` - Core metaphors, bookmark state machine
+- `doc/DESIGN.md` - Core metaphors, layout, bookmark state machine
+- `app/Shell.svelte` - Window layout: header, SplitView panes, status bar (`app/shell/`)
 - `app/mutators/BinaryMutator.ts` - All drag-drop policies
 - `app/ipc.ts` - IPC abstraction with runtime detection
 - `src/worker/mutations.rs` - All mutation implementations
