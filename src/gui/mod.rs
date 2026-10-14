@@ -34,7 +34,7 @@ use jjuicy_lib::messages::{
         DeleteRefs, DescribeRevision, DuplicateRevisions, ExternalDiff, ExternalResolve,
         ForgetWorkspace, GitFetch, GitPush, InitRepository, InsertRevisions, MoveChanges, MoveHunk,
         MoveRef, MoveRevisions, MutationOptions, MutationResult, RenameBookmark, RenameWorkspace,
-        ResolveConflictSide, TrackBookmark, UndoOperation, UntrackBookmark,
+        ResolveConflictSide, RestoreOperation, TrackBookmark, UndoOperation, UntrackBookmark,
     },
 };
 use jjuicy_lib::worker::{Mutation, Session, SessionEvent, WorkerSession};
@@ -199,6 +199,8 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             query_file_lines,
             query_remotes,
             query_bookmarks,
+            query_op_log,
+            view_operation,
             query_snapshot,
             open_terminal,
             open_user_config,
@@ -222,6 +224,7 @@ pub fn run_gui(options: super::RunOptions) -> Result<()> {
             create_ref,
             delete_ref,
             delete_refs,
+            restore_operation,
             move_ref,
             git_push,
             git_fetch,
@@ -625,6 +628,47 @@ fn query_bookmarks(
 }
 
 #[tauri::command(async)]
+fn query_op_log(
+    window: Window,
+    app_state: State<AppState>,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<messages::queries::OpLogEntry>, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::QueryOpLog {
+            tx: call_tx,
+            limit,
+            offset,
+        })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
+fn view_operation(
+    window: Window,
+    app_state: State<AppState>,
+    id: Option<String>,
+) -> Result<messages::RepoStatus, InvokeError> {
+    let session_tx: Sender<SessionEvent> = app_state.get_session(window.label());
+    let (call_tx, call_rx) = channel();
+
+    session_tx
+        .send(SessionEvent::ViewOperation { tx: call_tx, id })
+        .map_err(InvokeError::from_error)?;
+    call_rx
+        .recv()
+        .map_err(InvokeError::from_error)?
+        .map_err(InvokeError::from_anyhow)
+}
+
+#[tauri::command(async)]
 fn query_snapshot(
     window: Window,
     app_state: State<AppState>,
@@ -843,6 +887,16 @@ fn delete_refs(
     window: Window,
     app_state: State<AppState>,
     mutation: DeleteRefs,
+    options: MutationOptions,
+) -> Result<MutationResult, InvokeError> {
+    try_mutate(window, app_state, mutation, options)
+}
+
+#[tauri::command(async)]
+fn restore_operation(
+    window: Window,
+    app_state: State<AppState>,
+    mutation: RestoreOperation,
     options: MutationOptions,
 ) -> Result<MutationResult, InvokeError> {
     try_mutate(window, app_state, mutation, options)

@@ -11,6 +11,7 @@
         currentTarget,
         hasModal,
         logQueryRequest,
+        opLogOpen,
         repoConfigEvent,
         repoStatusEvent,
     } from "../stores";
@@ -71,10 +72,15 @@
         </div>
         <div id="status-operation" class="substatus">
             {#if $repoConfigEvent?.type == "Workspace"}
-                <!-- the operation log arrives in phase 4 -->
-                <span class="operation" title="Last operation">
-                    {$repoStatusEvent?.operation_description ?? "none"}
-                </span>
+                <button
+                    class="status-button operation"
+                    class:pinned={$repoStatusEvent?.at_operation}
+                    title="Operation log"
+                    aria-expanded={$opLogOpen}
+                    on:click={() => ($opLogOpen = !$opLogOpen)}>
+                    <Icon name="clock" />
+                    <span>{$repoStatusEvent?.operation_description ?? "none"}</span>
+                </button>
                 <button class="status-button" title="Undo latest operation" on:click={onUndo}>
                     <Icon name="rotate-ccw" />
                 </button>
@@ -162,11 +168,19 @@
     }
 
     .operation {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
         max-width: 40vw;
+        min-width: 0;
         color: var(--ju-colors-foregroundMuted);
+
+        & span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+
+    .pinned {
+        color: var(--ju-colors-warning);
     }
 
     .status-button {

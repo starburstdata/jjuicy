@@ -21,6 +21,7 @@
     import RevisionObject from "./objects/RevisionObject.svelte";
     import RevsetSection from "./log/RevsetSection.svelte";
     import BookmarkSection from "./log/BookmarkSection.svelte";
+    import { viewOperation } from "./oplog/oplog.js";
     import { withRevision } from "./log/bookmarks.js";
     import ListWidget, { type List, type Selection } from "./controls/ListWidget.svelte";
     import { type EnhancedRow, default as GraphLog, type EnhancedLine } from "./GraphLog.svelte";
@@ -381,6 +382,13 @@
 
 <Pane>
     <div slot="header">
+        {#if $repoStatusEvent?.at_operation}
+            <div class="readonly-banner" role="status">
+                <Icon name="eye" />
+                <span>Viewing operation <code>{$repoStatusEvent.at_operation.slice(0, 12)}</code> (read-only)</span>
+                <button on:click={() => viewOperation(null)}>Return to current</button>
+            </div>
+        {/if}
         <RevsetSection {query_choices} bind:value={entered_query} error={queryError} onSubmit={reloadLog} />
         <div class="column-header">
             {#if bookmarkCount > 0}
@@ -478,6 +486,31 @@
             height: 12px;
             width: 12px;
             min-width: 12px;
+        }
+    }
+
+    .readonly-banner {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 3px 3px 0 3px;
+        padding: 4px 6px;
+        border-radius: var(--ju-components-radiusSm);
+        background: var(--ju-colors-surfaceAlt);
+        color: var(--ju-colors-warning);
+        font-size: var(--ju-text-sizeSm);
+
+        & span {
+            flex: 1;
+        }
+
+        & button {
+            pointer-events: auto;
+            border: none;
+            background: transparent;
+            color: var(--ju-colors-accent);
+            font: inherit;
+            cursor: pointer;
         }
     }
 

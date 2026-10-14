@@ -26,6 +26,12 @@ The window is a header, a body and a status bar (`app/Shell.svelte`).
   counters from `RepoStatus.summary`. Clicking a counter filters the log through
   `logQueryRequest`. The backend caps counts and skips the summary on large repos, so the
   counters are cheap to keep current.
+- Clicking the operation opens the op log (`app/oplog/OpLogPanel.svelte`), a slide-over that
+  lists operations with view and restore. Viewing pins the worker session at a past operation
+  while remembering the head, so the op log still shows what came after; `RepoStatus.at_operation`
+  drives a read-only banner over the log, and the worker refuses snapshots and mutations until
+  the view returns to the head. Restore is a new operation, like `jj op restore`, so it can be
+  undone.
 - The log column's bookmark section (`app/log/BookmarkSection.svelte`) groups local, tracked
   and untracked remote bookmarks with ahead/behind badges. Selecting one reveals its target,
   widening the revset when it isn't loaded. Cleanup (merged, absent) is one `DeleteRefs`

@@ -100,6 +100,17 @@ pub enum SessionEvent {
     QueryBookmarks {
         tx: Sender<Result<Vec<messages::queries::BookmarkEntry>>>,
     },
+    /// A page of the operation log, newest first.
+    QueryOpLog {
+        tx: Sender<Result<Vec<messages::queries::OpLogEntry>>>,
+        limit: u32,
+        offset: u32,
+    },
+    /// View the repo read-only as of a past operation, or return to the head with `None`.
+    ViewOperation {
+        tx: Sender<Result<messages::RepoStatus>>,
+        id: Option<String>,
+    },
     /// Start a new log query with the given revset string.
     QueryLog {
         tx: Sender<Result<messages::queries::LogPage>>,
@@ -327,6 +338,9 @@ impl Session for WorkspaceSession<'_> {
                     tracking_bookmark,
                 } => tx.send(queries::query_remotes(&self, tracking_bookmark))?,
                 SessionEvent::QueryBookmarks { tx } => tx.send(queries::query_bookmarks(&self))?,
+                SessionEvent::QueryOpLog { tx, limit, offset } => {
+                    tx.send(queries::query_op_log(&self, limit, offset))?
+                }
                 SessionEvent::QueryLog {
                     tx,
                     query: revset_string,
@@ -350,6 +364,22 @@ impl Session for WorkspaceSession<'_> {
                 SessionEvent::QueryLogNextPage { tx } => {
                     let revset_string = self.session.latest_query.as_deref();
                     handle_query(&mut state, &self, tx, rx, revset_string, None).await?;
+                }
+                SessionEvent::ViewOperation { tx, id } => {
+                    let result = self.view_operation(id.as_deref()).await;
+                    tx.send(match result {
+                        Ok(()) => Ok(self.format_status().await),
+                        Err(err) => Err(err),
+                    })?;
+                }
+                SessionEvent::ExecuteSnapshot { tx } if self.is_pinned() => {
+                    // a snapshot would move to the head, out from under the view
+                    tx.send(None)?;
+                }
+                SessionEvent::ExecuteMutation { tx, .. } if self.is_pinned() => {
+                    tx.send(messages::mutations::MutationResult::PreconditionError {
+                        message: "Viewing a past operation; return to the current operation to make changes".into(),
+                    })?;
                 }
                 SessionEvent::ExecuteSnapshot { tx } => {
                     // mutations reload at head themselves (see start_transaction); this is
@@ -583,6 +613,9 @@ impl Session for QuerySession<'_, '_> {
                 }) => tx.send(queries::query_remotes(self.ws, tracking_bookmark))?,
                 Ok(SessionEvent::QueryBookmarks { tx }) => {
                     tx.send(queries::query_bookmarks(self.ws))?
+                }
+                Ok(SessionEvent::QueryOpLog { tx, limit, offset }) => {
+                    tx.send(queries::query_op_log(self.ws, limit, offset))?
                 }
                 Ok(SessionEvent::QueryLogNextPage { tx }) => tx.send(self.get_page())?,
                 Ok(unhandled) => return Ok(QueryResult(unhandled, self.state)),

@@ -3,7 +3,7 @@ import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
 import { get } from "svelte/store";
 import type { RepoSummary } from "../messages/RepoSummary";
 import { setupMocks, cleanupMocks } from "../mocks";
-import { logQueryRequest, repoConfigEvent, repoStatusEvent } from "../stores";
+import { logQueryRequest, opLogOpen, repoConfigEvent, repoStatusEvent } from "../stores";
 import { formatCount } from "./statusbar";
 
 let calls: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -101,5 +101,16 @@ describe("StatusBar", () => {
         let { getByTitle } = render(StatusBar, { props: { target: false } });
         await fireEvent.click(getByTitle("Undo latest operation"));
         await waitFor(() => expect(calls.some((c) => c.cmd === "undo_operation")).toBe(true));
+    });
+
+    it("toggles the operation log", async () => {
+        status(null);
+        opLogOpen.set(false);
+        let { default: StatusBar } = await import("./StatusBar.svelte");
+        let { getByTitle } = render(StatusBar, { props: { target: false } });
+        await fireEvent.click(getByTitle("Operation log"));
+        expect(get(opLogOpen)).toBe(true);
+        await fireEvent.click(getByTitle("Operation log"));
+        expect(get(opLogOpen)).toBe(false);
     });
 });

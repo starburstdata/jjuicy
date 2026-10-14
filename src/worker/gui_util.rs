@@ -36,6 +36,7 @@ use jj_lib::{
     object_id::ObjectId,
     op_heads_store::{self, OpHeadsStore},
     op_store::OperationId,
+    op_walk,
     operation::Operation,
     ref_name::{WorkspaceName, WorkspaceNameBuf},
     repo::{ReadonlyRepo, Repo, RepoLoaderError, StoreFactories},
@@ -80,6 +81,9 @@ pub struct WorkspaceSession<'a> {
 
     // operation-specific data, containing a repo view and derived extras
     operation: OperationData,
+    // set while viewing a past operation; the op head at the time, so the op log can still
+    // show what came after
+    pinned_head: Option<Operation>,
 }
 
 pub(crate) struct WorkspaceData {
@@ -166,6 +170,7 @@ impl WorkerSession {
             is_large,
             is_colocated,
             operation,
+            pinned_head: None,
         })
     }
 }
@@ -375,6 +380,48 @@ impl WorkspaceSession<'_> {
     /// The operation this session is currently viewing.
     pub(crate) fn op_id(&self) -> &OperationId {
         self.operation.repo.op_id()
+    }
+
+    /// The op head when viewing a past operation, otherwise the viewed operation.
+    pub(crate) fn head_operation(&self) -> &Operation {
+        self.pinned_head
+            .as_ref()
+            .unwrap_or_else(|| self.operation.repo.operation())
+    }
+
+    pub(crate) fn is_pinned(&self) -> bool {
+        self.pinned_head.is_some()
+    }
+
+    /// Show the repo as of a past operation without snapshotting, or return to the head with
+    /// `None`. Nothing is written either way.
+    pub(crate) async fn view_operation(&mut self, id: Option<&str>) -> Result<()> {
+        let Some(id) = id else {
+            self.pinned_head = None;
+            self.load_at_head().await?;
+            return Ok(());
+        };
+
+        // resolve relative to the head, so ids newer than the viewed op still work
+        let head = self.head_operation().clone();
+        let op = op_walk::resolve_op_at(self.repo().op_store(), slice::from_ref(&head), id)?;
+        if op.id() == head.id() {
+            self.pinned_head = None;
+            self.load_at_head().await?;
+            return Ok(());
+        }
+
+        let repo = self.workspace.repo_loader().load_at(&op).await?;
+        if repo
+            .view()
+            .get_wc_commit_id(self.workspace.workspace_name())
+            .is_none()
+        {
+            return Err(anyhow!("This workspace didn't exist at that operation"));
+        }
+        self.operation = OperationData::new(self.workspace.workspace_name(), &self.data, repo);
+        self.pinned_head = Some(head);
+        Ok(())
     }
 
     pub(crate) async fn load_at_head(&mut self) -> Result<bool> {
@@ -869,6 +916,7 @@ impl WorkspaceSession<'_> {
                 .clone(),
             working_copy: self.format_commit_id(&self.operation.wc_id),
             summary,
+            at_operation: self.is_pinned().then(|| self.operation.repo.op_id().hex()),
         }
     }
 

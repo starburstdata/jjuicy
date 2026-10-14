@@ -1,8 +1,9 @@
 use super::{mkid, mkrepo, revs};
 use crate::{
     messages::{
-        RepoConfig, RevSet,
-        queries::{LogPage, RevsResult},
+        RepoConfig, RepoStatus, RevSet,
+        mutations::{CreateRevision, MutationOptions, MutationResult},
+        queries::{LogPage, OpLogEntry, RevsResult},
     },
     worker::{Session, SessionEvent, WorkerSession},
 };
@@ -949,6 +950,80 @@ async fn status_summary_skipped_when_large() -> Result<()> {
     let summary =
         assert_matches!(rx_load.recv()??, RepoConfig::Workspace { status, .. } => status.summary);
     assert_eq!(None, summary);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn view_operation_is_read_only() -> Result<()> {
+    let repo = mkrepo();
+
+    let (tx, rx) = channel::<SessionEvent>();
+    let (tx_load, rx_load) = channel::<Result<RepoConfig>>();
+    let (tx_log, rx_log) = channel::<Result<LogPage>>();
+    let (tx_mutate, rx_mutate) = channel::<MutationResult>();
+    let (tx_view, rx_view) = channel::<Result<RepoStatus>>();
+    let (tx_ops, rx_ops) = channel::<Result<Vec<OpLogEntry>>>();
+    let (tx_snapshot, rx_snapshot) = channel::<Option<RepoStatus>>();
+
+    let create = || SessionEvent::ExecuteMutation {
+        tx: tx_mutate.clone(),
+        mutation: Box::new(CreateRevision {
+            set: RevSet::singleton(revs::working_copy()),
+        }),
+        options: MutationOptions::default(),
+    };
+    let log = || SessionEvent::QueryLog {
+        tx: tx_log.clone(),
+        query: "all()".to_owned(),
+    };
+
+    tx.send(SessionEvent::OpenWorkspace {
+        tx: tx_load,
+        wd: Some(repo.path().to_owned()),
+    })?;
+    tx.send(log())?;
+    tx.send(create())?;
+    tx.send(SessionEvent::ViewOperation {
+        tx: tx_view.clone(),
+        id: Some("@-".to_owned()),
+    })?;
+    tx.send(log())?;
+    tx.send(SessionEvent::QueryOpLog {
+        tx: tx_ops,
+        limit: 2,
+        offset: 0,
+    })?;
+    tx.send(create())?;
+    tx.send(SessionEvent::ExecuteSnapshot { tx: tx_snapshot })?;
+    tx.send(SessionEvent::ViewOperation {
+        tx: tx_view,
+        id: None,
+    })?;
+    tx.send(log())?;
+    tx.send(SessionEvent::EndSession)?;
+    WorkerSession::default().handle_events(&rx).await?;
+
+    assert_matches!(rx_load.recv()??, RepoConfig::Workspace { .. });
+    let initial_rows = rx_log.recv()??.rows.len();
+    assert_matches!(rx_mutate.recv()?, MutationResult::Updated { .. });
+
+    let status = rx_view.recv()??;
+    assert!(status.at_operation.is_some());
+    assert_eq!(initial_rows, rx_log.recv()??.rows.len());
+
+    // the op log still starts at the head, with the viewed op marked current
+    let ops = rx_ops.recv()??;
+    assert!(!ops[0].is_current);
+    assert!(ops[1].is_current);
+    assert_eq!(status.at_operation, Some(ops[1].id.clone()));
+
+    assert_matches!(rx_mutate.recv()?, MutationResult::PreconditionError { .. });
+    assert!(rx_snapshot.recv()?.is_none());
+
+    let status = rx_view.recv()??;
+    assert!(status.at_operation.is_none());
+    assert_eq!(initial_rows + 1, rx_log.recv()??.rows.len());
 
     Ok(())
 }

@@ -272,6 +272,14 @@ pub struct GitFetch {
 #[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
 pub struct UndoOperation;
 
+/// Restores the repo (and remote-tracking bookmarks) to the state at an earlier operation,
+/// like `jj op restore`.
+#[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "ts-rs", derive(TS), ts(export, export_to = "app/messages/"))]
+pub struct RestoreOperation {
+    pub id: String,
+}
+
 /// Forgets a workspace, removing it from the repository.
 /// If the workspace's working copy commit is empty, it is abandoned.
 #[derive(Deserialize, Debug)]

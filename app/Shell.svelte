@@ -18,6 +18,7 @@
         ignoreToggled,
         logDensity,
         avatarMode,
+        opLogOpen,
     } from "./stores.js";
     import { parseDensity } from "./log/density";
     import { parseAvatarMode } from "./controls/avatar";
@@ -37,6 +38,7 @@
     import { onMount, setContext } from "svelte";
     import InputDialog from "./shell/InputDialog.svelte";
     import ConfirmDialog from "./shell/ConfirmDialog.svelte";
+    import OpLogPanel from "./oplog/OpLogPanel.svelte";
     import type Settings from "./shell/Settings";
     import type { RepoEvent } from "./messages/RepoEvent";
     import RepositoryMutator from "./mutators/RepositoryMutator";
@@ -349,6 +351,10 @@
         <div class="separator" style="grid-row: 3"></div>
 
         <StatusBar {target} />
+
+        {#if $opLogOpen && $repoConfigEvent.type == "Workspace"}
+            <OpLogPanel />
+        {/if}
 
         {#if $currentInput}
             <ModalOverlay>

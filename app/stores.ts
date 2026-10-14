@@ -41,6 +41,7 @@ export const ignoreToggled = writable<boolean>(false);
 export const selectionHeaders = writable<RevHeader[]>([]);
 // set by widgets outside the log pane (e.g. status bar counters) to replace the revset
 export const logQueryRequest = writable<string | null>(null);
+export const opLogOpen = writable<boolean>(false);
 
 export const logDensity = writable<Density>("comfortable");
 export const avatarMode = writable<AvatarMode>("initials");
