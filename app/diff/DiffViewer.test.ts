@@ -156,6 +156,27 @@ describe("DiffViewer", () => {
         await vi.waitFor(() => expect(container.querySelector(".add")).not.toBeNull());
         expect(container.querySelectorAll(".add").length).toBeLessThan(500);
     });
+
+    it("defers lazy diffs until scrolled near", async () => {
+        let { default: DiffViewer } = await import("./DiffViewer.svelte");
+        let scroller = document.createElement("div");
+        scroller.style.cssText = "height: 200px; overflow-y: auto";
+        let spacer = document.createElement("div");
+        spacer.style.height = "5000px";
+        let target = document.createElement("div");
+        scroller.append(spacer, target);
+        document.body.append(scroller);
+        try {
+            render(DiffViewer, { target, props: { set, change, header: null, lazy: true } });
+            await new Promise((r) => setTimeout(r, 50));
+            expect(calls.filter((c) => c.cmd == "query_file_diff")).toHaveLength(0);
+
+            scroller.scrollTop = 5000;
+            await vi.waitFor(() => expect(calls.filter((c) => c.cmd == "query_file_diff")).toHaveLength(1));
+        } finally {
+            scroller.remove();
+        }
+    });
 });
 
 describe("FileHeader", () => {
