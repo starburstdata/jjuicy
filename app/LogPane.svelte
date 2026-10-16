@@ -118,6 +118,7 @@
 
     let bookmarkCount = 0;
     let bookmarksOpen = false;
+    let bookmarksReady = false;
     let bookmarksAnchor: HTMLElement;
 
     function onWindowClick(event: MouseEvent) {
@@ -267,7 +268,8 @@
             {
                 revset: entered_query == "" ? "all()" : entered_query,
             },
-            () => (graphRows = undefined),
+            // a reload after a mutation keeps the old rows up rather than flashing a placeholder
+            selectFirst ? () => (graphRows = undefined) : undefined,
         );
         if (epoch !== loadEpoch) return;
 
@@ -302,6 +304,8 @@
                 syncSelectionWithGraph();
             }
         }
+        // a macrotask, so the detail pane's query for the selection is sent first
+        if (!bookmarksReady) setTimeout(() => (bookmarksReady = true));
     }
 
     // policy: reselect by commit id if the original revisions are still around, update by change id if they aren't
@@ -418,10 +422,12 @@
             {#if graphRows}
                 <span class="row-count">{formatCount(graphRows.length)} {graphRows.length == 1 ? "change" : "changes"}</span>
             {/if}
-            <!-- kept mounted while closed so the toggle's count stays current -->
+            <!-- kept mounted while closed so the toggle has a count; it refreshes on open -->
             <div class="bookmarks-dropdown" class:collapsed={!bookmarksOpen} role="dialog" aria-label="Bookmarks">
                 <BookmarkSection
                     bind:count={bookmarkCount}
+                    open={bookmarksOpen}
+                    ready={bookmarksReady}
                     loaded={rowIdxByHex}
                     onReveal={revealBookmark}
                     onShowInLog={showInLog} />
