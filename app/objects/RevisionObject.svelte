@@ -103,7 +103,7 @@
     function recomputeAvailable() {
         if (!layoutEl) return;
         if (card) {
-            // chips share the first line with the id and flags only; the description has its own line
+            // chips share the second line with the id and flags only; the description has its own line
             let style = getComputedStyle(layoutEl);
             let innerW = layoutEl.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
             let idW = idEl?.getBoundingClientRect().width ?? 0;
@@ -380,8 +380,7 @@
                 </span>
 
                 <span
-                    class="text desc"
-                    class:truncate={!card}
+                    class="text desc truncate"
                     class:indescribable={!context && header.description.lines[0] == ""}>
                     {dragHint ??
                         dropHint ??
@@ -505,19 +504,19 @@
         padding-left: var(--leftpad);
     }
 
-    /* three fixed rows - GraphLog relies on a constant height per density */
+    /* three fixed rows - GraphLog relies on a constant height per density (see density.ts) */
     .layout.card {
-        height: 76px;
+        height: 62px;
         display: grid;
         grid-template-columns: auto auto minmax(0, 1fr);
-        grid-template-rows: 20px 34px 18px;
+        grid-template-rows: 22px 20px 16px;
         grid-template-areas:
-            "id flags refs"
             "desc desc desc"
+            "id flags refs"
             "meta meta meta";
         gap: 0 6px;
         align-items: center;
-        padding-top: 4px;
+        align-content: center;
         padding-right: 6px;
     }
 
@@ -545,15 +544,8 @@
     }
 
     .card .desc {
-        align-self: start;
         font-size: var(--ju-text-sizeMd);
-        line-height: 17px;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        overflow: hidden;
-        overflow-wrap: anywhere;
+        font-weight: 500;
     }
 
     .card .meta {
