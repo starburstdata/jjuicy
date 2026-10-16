@@ -6,11 +6,15 @@ import { setupMocks, cleanupMocks } from "../mocks";
 import { ENTRIES } from "./bookmarks.fixtures";
 
 let mutations: { cmd: string; args: any }[] = [];
+let loads = 0;
 
 describe("BookmarkSection", () => {
     beforeAll(() => {
         setupMocks((cmd, args) => {
-            if (cmd === "query_bookmarks") return ENTRIES;
+            if (cmd === "query_bookmarks") {
+                loads++;
+                return ENTRIES;
+            }
             if (cmd === "delete_refs") {
                 mutations.push({ cmd, args });
                 return { type: "Unchanged" };
@@ -27,6 +31,7 @@ describe("BookmarkSection", () => {
         cleanup();
         localStorage.clear();
         mutations = [];
+        loads = 0;
     });
 
     async function renderSection(visible: string[] = []) {
@@ -87,5 +92,31 @@ describe("BookmarkSection", () => {
         expect(request.items).toEqual(["gone@origin"]);
         request.callback(false);
         expect(mutations).toHaveLength(0);
+    });
+
+    it("defers reloading on status changes until opened", async () => {
+        let { repoStatusEvent } = await import("../stores");
+        let { default: BookmarkSection } = await import("./BookmarkSection.svelte");
+        let status = (n: number) => ({
+            operation_description: `op ${n}`,
+            working_copy: { type: "CommitId" as const, hex: "0".repeat(40), prefix: "0000000", rest: "0".repeat(33) },
+            summary: null,
+        });
+        repoStatusEvent.set(status(1));
+        let result = render(BookmarkSection, {
+            props: { loaded: new Set<string>(), onReveal: () => {}, onShowInLog: () => {}, open: false },
+        });
+        await waitFor(() => expect(loads).toBe(1));
+
+        repoStatusEvent.set(status(2));
+        repoStatusEvent.set(status(3));
+        await new Promise(r => setTimeout(r, 20));
+        expect(loads).toBe(1);
+
+        await result.rerender({ open: true });
+        await waitFor(() => expect(loads).toBe(2));
+
+        repoStatusEvent.set(status(4));
+        await waitFor(() => expect(loads).toBe(3));
     });
 });
