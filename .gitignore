@@ -38,3 +38,6 @@ dist-ssr
 # vitest failure artifacts
 .vitest-attachments
 __screenshots__
+
+# Python
+__pycache__/
