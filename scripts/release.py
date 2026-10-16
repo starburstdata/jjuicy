@@ -234,6 +234,8 @@ def open_homebrew_pr(version, sha256, tmpdir):
 
     formula = re.sub(r'^(\s*url ")[^"]+"', f'\\g<1>{tarball_url}"', formula, flags=re.MULTILINE)
     formula = re.sub(r'^(\s*sha256 ")[^"]+"', f'\\g<1>{sha256}"', formula, flags=re.MULTILINE)
+    # formulas with an explicit version line ignore the one inferred from the url
+    formula = re.sub(r'^(\s*version ")[^"]+"', f'\\g<1>{version}"', formula, flags=re.MULTILINE)
     formula_path.write_text(formula)
 
     branch = f"bump-v{version}"
