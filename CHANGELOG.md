@@ -1,5 +1,33 @@
 # GG Changelog
 
+## [2.0.0](releases/tag/v2.0.0)
+
+### Added
+- Revision detail pane: inline describe, action row, and clickable parent chips
+- Changed-files column with list/tree views, a filter, and conflicted files sorted first
+- Per-file diff viewer with unified/split views, expandable context, and moving hunks to the working copy
+- Syntax highlighting in diffs, using the theme's syntax tokens
+- Conflict view with accept-ours/theirs resolution
+- Blame gutter in the diff viewer; clicking it selects the revision that last touched the line
+- Sticky horizontal scroll bar for long diff lines
+- Evolog "History" tab: diff and restore a revision's previous versions
+- File history from the change context menu
+- Operation log panel with view-at (read-only) and restore
+- Bookmark list dropdown with ahead/behind badges, reveal in log, show as revset, and bulk cleanup of stale bookmarks
+- Revset editor with multiline input and inline errors
+- Status bar with latest operation, undo, and repo counters (working-copy changes, conflicts, divergent changes) that filter the log
+- Window header with breadcrumb, recent workspaces, refresh, fetch, push, terminal and settings launchers
+- Resizable, collapsible multi-pane layout that remembers sizes; the file list column can be hidden
+- Labelled toolbar under the native title bar on macOS
+- Settings `jjuicy.ui.log-density` (comfortable/compact) and `jjuicy.ui.avatars` (initials/gravatar/none)
+- Setting `jjuicy.queries.max-diff-bytes`: larger files show a placeholder instead of a diff
+
+### Changed
+- Redesigned UI: two-line revision cards with avatars and styled bookmark/tag/workspace chips
+- The macOS theme is now the default; the old default theme is removed, and custom themes inherit missing tokens from it
+- All-files diff mode loads each file's diff as it scrolls into view, so large revisions open faster
+- Selection-to-paint performance budgets; long file lists mount in chunks
+
 ## [1.0.4](releases/tag/v1.0.4)
 
 ### Fixed
