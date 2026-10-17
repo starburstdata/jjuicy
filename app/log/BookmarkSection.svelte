@@ -21,6 +21,12 @@
     export let onReveal: (header: RevHeader) => void;
     export let onShowInLog: (header: RevHeader) => void;
     export let count = 0;
+    // closed, status changes only mark the list stale: query_bookmarks shares the worker
+    // with query_log and can take long enough on big repos to blank the log after every mutation
+    export let open = true;
+    // held off until the log's first load: queued ahead of query_log/query_revisions on
+    // the worker, query_bookmarks delays the first paint and the detail pane
+    export let ready = true;
 
     const GROUPS: BookmarkGroup[] = ["local", "tracked", "untracked"];
 
@@ -33,12 +39,18 @@
     $: absent = absentTargets(entries);
 
     let lastStatusKey: string | null = null;
-    $: {
-        let key = JSON.stringify($repoStatusEvent ?? null);
-        if (key !== lastStatusKey) {
-            lastStatusKey = key;
-            load();
-        }
+    let stale = false;
+    $: statusKey = JSON.stringify($repoStatusEvent ?? null);
+    $: if (ready && statusKey !== lastStatusKey) {
+        // with no count the toggle is hidden, so there'd be no way to open it
+        let first = lastStatusKey === null;
+        lastStatusKey = statusKey;
+        if (first || open || count == 0) load();
+        else stale = true;
+    }
+    $: if (open && stale) {
+        stale = false;
+        load();
     }
 
     let loadEpoch = 0;

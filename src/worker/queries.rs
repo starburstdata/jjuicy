@@ -818,6 +818,10 @@ pub fn query_bookmarks(ws: &WorkspaceSession) -> Result<Vec<BookmarkEntry>> {
     // trunk itself is excluded, or a synced main would offer to delete itself
     let merged = ws.evaluate_revset_str("::trunk() ~ trunk()")?;
     let is_merged = merged.containing_fn();
+    // one membership test for all targets; format_header's own check re-evaluates
+    // immutable_heads() per commit, which dominated on repos with hundreds of remote bookmarks
+    let immutable = ws.evaluate_immutable()?;
+    let is_immutable = immutable.containing_fn();
 
     let mut entries = Vec::new();
     for (name, target) in ws.view().bookmarks() {
@@ -837,7 +841,7 @@ pub fn query_bookmarks(ws: &WorkspaceSession) -> Result<Vec<BookmarkEntry>> {
             };
             remotes.push(RemoteBookmarkState {
                 remote: remote.as_str().to_owned(),
-                target: format_target(ws, &remote_ref.target)?,
+                target: format_target(ws, &is_immutable, &remote_ref.target)?,
                 tracked: remote_ref.is_tracked(),
                 absent: remote_ref.is_tracked() && local.is_absent(),
                 ahead,
@@ -846,7 +850,7 @@ pub fn query_bookmarks(ws: &WorkspaceSession) -> Result<Vec<BookmarkEntry>> {
         }
         entries.push(BookmarkEntry {
             name: name.as_str().to_owned(),
-            target: format_target(ws, local)?,
+            target: format_target(ws, &is_immutable, local)?,
             has_conflict: local.has_conflict(),
             is_merged: match local.as_normal() {
                 Some(id) => is_merged(id)?,
@@ -859,9 +863,18 @@ pub fn query_bookmarks(ws: &WorkspaceSession) -> Result<Vec<BookmarkEntry>> {
 }
 
 // conflicted targets show their first side; the conflict itself is flagged separately
-fn format_target(ws: &WorkspaceSession, target: &RefTarget) -> Result<Option<RevHeader>> {
+fn format_target(
+    ws: &WorkspaceSession,
+    is_immutable: &impl Fn(&CommitId) -> Result<bool, RevsetEvaluationError>,
+    target: &RefTarget,
+) -> Result<Option<RevHeader>> {
     match target.added_ids().next() {
-        Some(id) => Ok(Some(ws.format_header(&ws.get_commit(id)?, None)?)),
+        Some(id) => {
+            let immutable = is_immutable(id)?;
+            Ok(Some(
+                ws.format_header(&ws.get_commit(id)?, Some(immutable))?,
+            ))
+        }
         None => Ok(None),
     }
 }

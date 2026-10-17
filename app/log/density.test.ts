@@ -7,11 +7,11 @@ describe("density", () => {
         expect(parseDensity("compact")).toBe("compact");
     });
 
-    it("keeps the node inside the row", () => {
+    it("centres the node in the row", () => {
         for (let d of ["compact", "comfortable"] as const) {
             let g = rowGeometry(d);
             expect(g.nodeY).toBeGreaterThan(0);
-            expect(g.nodeY).toBeLessThan(g.rowHeight);
+            expect(g.nodeY).toBe(g.rowHeight / 2);
         }
     });
 });
