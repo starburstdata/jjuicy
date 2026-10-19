@@ -1,5 +1,14 @@
 # GG Changelog
 
+## [2.1.0](releases/tag/v2.1.0)
+
+### Changed
+- Revision cards in the log now show the description first, then the change id with bookmarks, then the commit id and author. The graph node is centred on the row.
+
+### Fixed
+- The log no longer flashes "Loading changes..." after mutations. The bookmark list now reloads only when opened, and keeps its old rows while reloading.
+- Bookmark queries are faster. The immutability check is about 7x quicker on large repos (~900ms to ~120ms on jj's repo).
+
 ## [2.0.0](releases/tag/v2.0.0)
 
 ### Added
